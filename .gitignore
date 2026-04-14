@@ -49,6 +49,10 @@ htmlcov/
 datasets/*.xml
 datasets/*.zip
 
+# --- Frontend ---
+frontend/node_modules/
+frontend/dist/
+
 # --- Editors (optional; remove if you prefer sharing) ---
 .idea/
 *.swp
