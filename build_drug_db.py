@@ -1,7 +1,11 @@
 """
 Medora Drug Interaction Database Builder
 
-Run from ~/medora/:  python build_drug_db.py
+Run from the project root:  python build_drug_db.py
+
+Creates medora.db (RxNorm RxCUIs, curated interactions, Beers criteria).
+If datasets/full database.xml is present, DrugBank drug–drug interactions
+are merged in afterward (curated beers_and_clinical pairs are preserved).
 """
 
 import sqlite3
@@ -9,11 +13,18 @@ import requests
 import time
 import json
 import re
+import os
+import xml.etree.ElementTree as ET
 
 # ---------------------------------------------------------------------------
 # CONFIG
 # ---------------------------------------------------------------------------
 DB_FILE = "medora.db"
+
+# DrugBank full database XML (after unzip). See datasets/README or DrugBank download.
+DRUGBANK_XML = os.path.join("datasets", "full database.xml")
+
+DRUGBANK_NS = "{http://www.drugbank.ca}"
 
 COMMON_ELDERLY_DRUGS = [
     "warfarin", "metformin", "lisinopril", "amlodipine", "atorvastatin",
@@ -324,7 +335,8 @@ def create_db():
         CREATE TABLE drugs (
             name TEXT PRIMARY KEY,
             rxcui TEXT,
-            brand_names TEXT DEFAULT ''
+            brand_names TEXT DEFAULT '',
+            drugbank_id TEXT
         );
 
         CREATE TABLE interactions (
@@ -436,6 +448,158 @@ def load_beers_criteria(db):
     print(f"{count} Beers Criteria entries loaded\n")
 
 
+def load_drugbank_interactions(db, xml_path=None):
+    """Parse DrugBank XML and add drug-drug interactions; preserve curated rows."""
+    path = xml_path or DRUGBANK_XML
+    if not os.path.isfile(path):
+        print(
+            f"=== 4. DrugBank XML skipped (not found: {path})\n"
+            f"    Unzip the DrugBank full database XML into datasets/ to load DDIs.\n"
+        )
+        return
+
+    ns = DRUGBANK_NS
+    try:
+        db.execute("ALTER TABLE drugs ADD COLUMN drugbank_id TEXT")
+    except sqlite3.OperationalError:
+        pass
+
+    before = db.execute("SELECT COUNT(*) FROM interactions").fetchone()[0]
+    print(f"=== 4. Loading DrugBank interactions from {path}")
+    print(f"    Interactions before import: {before}\n")
+
+    drug_count = 0
+    interaction_count = 0
+    skipped = 0
+
+    context = ET.iterparse(path, events=("end",))
+    for _event, elem in context:
+        if elem.tag != f"{ns}drug":
+            continue
+
+        if elem.attrib.get("type") not in ("small molecule", "biotech"):
+            elem.clear()
+            continue
+
+        dbid = None
+        name = None
+
+        for child_id in elem.findall(f"{ns}drugbank-id"):
+            if child_id.attrib.get("primary") == "true":
+                dbid = child_id.text
+                break
+
+        name_el = elem.find(f"{ns}name")
+        if name_el is not None:
+            name = name_el.text
+
+        if not dbid or not name:
+            elem.clear()
+            continue
+
+        name_lower = name.lower()
+        existing = db.execute(
+            "SELECT name FROM drugs WHERE name = ?",
+            (name_lower,),
+        ).fetchone()
+
+        if existing:
+            db.execute(
+                "UPDATE drugs SET drugbank_id = ? WHERE name = ?",
+                (dbid, name_lower),
+            )
+        else:
+            db.execute(
+                "INSERT OR IGNORE INTO drugs (name, drugbank_id) VALUES (?, ?)",
+                (name_lower, dbid),
+            )
+
+        ddi_el = elem.find(f"{ns}drug-interactions")
+        if ddi_el is not None:
+            for ddi in ddi_el.findall(f"{ns}drug-interaction"):
+                other_name_el = ddi.find(f"{ns}name")
+                desc_el = ddi.find(f"{ns}description")
+
+                if other_name_el is None:
+                    continue
+
+                other_name = (
+                    other_name_el.text.lower() if other_name_el.text else ""
+                )
+                desc = (
+                    desc_el.text
+                    if desc_el is not None and desc_el.text
+                    else ""
+                )
+
+                existing_ix = db.execute(
+                    "SELECT source FROM interactions "
+                    "WHERE drug1 = ? AND drug2 = ?",
+                    (name_lower, other_name),
+                ).fetchone()
+
+                if existing_ix and existing_ix[0] == "beers_and_clinical":
+                    skipped += 1
+                    continue
+
+                desc_check = desc.lower()
+                severity = "moderate"
+                if any(
+                    w in desc_check
+                    for w in (
+                        "contraindicated",
+                        "serious",
+                        "fatal",
+                        "black box",
+                        "avoid",
+                        "life-threatening",
+                        "significantly increase",
+                        "major",
+                    )
+                ):
+                    severity = "major"
+                elif any(
+                    w in desc_check for w in ("minor", "slight", "minimal")
+                ):
+                    severity = "minor"
+
+                try:
+                    cur = db.execute(
+                        "INSERT OR IGNORE INTO interactions "
+                        "(drug1, drug2, description, severity, "
+                        "management, source) "
+                        "VALUES (?, ?, ?, ?, ?, 'drugbank')",
+                        (name_lower, other_name, desc, severity, ""),
+                    )
+                    if cur.rowcount:
+                        interaction_count += 1
+                except sqlite3.IntegrityError:
+                    pass
+
+        drug_count += 1
+        if drug_count % 1000 == 0:
+            db.commit()
+            print(
+                f"    Processed {drug_count} drugs, "
+                f"{interaction_count} new DrugBank interactions..."
+            )
+
+        elem.clear()
+
+    db.commit()
+    after = db.execute("SELECT COUNT(*) FROM interactions").fetchone()[0]
+    drugbank_rows = db.execute(
+        "SELECT COUNT(*) FROM interactions WHERE source = 'drugbank'"
+    ).fetchone()[0]
+    print(
+        f"\n    Drugs processed: {drug_count}\n"
+        f"    New DrugBank interaction rows attempted: {interaction_count}\n"
+        f"    Curated pairs skipped: {skipped}\n"
+        f"    Total interactions now: {after} "
+        f"({drugbank_rows} from DrugBank)\n"
+    )
+
+
 def print_summary(db):
     drugs = db.execute("SELECT COUNT(*) FROM drugs").fetchone()[0]
     interactions = db.execute("SELECT COUNT(*) FROM interactions").fetchone()[0]
@@ -443,12 +607,16 @@ def print_summary(db):
         "SELECT COUNT(*) FROM interactions WHERE severity='major'"
     ).fetchone()[0]
     beers = db.execute("SELECT COUNT(*) FROM beers_criteria").fetchone()[0]
+    drugbank_ix = db.execute(
+        "SELECT COUNT(*) FROM interactions WHERE source = 'drugbank'"
+    ).fetchone()[0]
 
     print("=" * 25)
     print("  Medora Database Summary")
     print("=" * 25)
     print(f"  Drugs:              {drugs}")
     print(f"  Interactions:       {interactions} ({major} major)")
+    print(f"    DrugBank-sourced: {drugbank_ix}")
     print(f"  Beers Criteria:     {beers} entries")
     print(f"  Database file:      {DB_FILE}")
     print("=" * 25)
@@ -468,6 +636,7 @@ def main():
     load_rxcui(db)
     load_curated_interactions(db)
     load_beers_criteria(db)
+    load_drugbank_interactions(db)
     print_summary(db)
     db.close()
     print("Done!")
