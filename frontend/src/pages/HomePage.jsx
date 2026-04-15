@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { FaCamera } from "react-icons/fa";
+import { FaCamera, FaLock } from "react-icons/fa";
 import { useMedora } from "../context/MedoraContext.jsx";
 
 export default function HomePage() {
@@ -9,7 +9,7 @@ export default function HomePage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-[#f9f9f9] px-6 pb-6 pt-9 text-center">
       <div className="flex flex-1 flex-col items-center justify-center">
-        <header className="mb-8 flex items-center justify-center gap-[0.65rem]">
+        <header className="mb-3 flex items-center justify-center gap-[0.65rem]">
           <div
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary text-primary"
             aria-hidden
@@ -41,13 +41,13 @@ export default function HomePage() {
           <span className="text-4xl font-bold tracking-tight text-primary">Medora</span>
         </header>
 
-        <h1 className="mb-8 text-[1.65rem] font-bold leading-tight tracking-tight text-text">
+        <h1 className="mb-10 text-[1.6rem] font-bold leading-tight tracking-tight text-text">
           Check your medications
           <br />
           safely
         </h1>
 
-        <div className="flex flex-col items-center gap-4">
+        <div className="flex flex-col items-center gap-6">
           <button
             type="button"
             className="inline-flex w-full max-w-full items-center justify-center gap-2.5 rounded-full bg-primary px-6 py-4 text-base font-semibold text-white shadow-[0_6px_20px_rgba(45,122,94,0.35)] transition-transform duration-100 hover:bg-primary-dark active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-[0.65]"
@@ -73,28 +73,12 @@ export default function HomePage() {
         </div>
       </div>
 
-      <p className="mt-12 flex items-center justify-center gap-1.5 text-[0.8rem] text-muted">
-        <svg viewBox="0 0 20 20" width="16" height="16" fill="none" aria-hidden>
-          <path
-            d="M5 9V7a5 5 0 0 1 10 0v2"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-          />
-          <rect
-            x="4"
-            y="9"
-            width="12"
-            height="9"
-            rx="2"
-            stroke="currentColor"
-            strokeWidth="1.5"
-          />
-        </svg>
+      <p className="mt-8 flex items-center justify-center gap-1.5 text-[0.8rem] text-muted">
+        <FaLock className="h-3 w-3 shrink-0" aria-hidden />
         Everything stays on your device. No internet needed.
       </p>
 
-      <p className="mx-auto mt-7 max-w-[32ch] text-[0.72rem] leading-snug text-muted-2">
+      <p className="mx-auto mt-4 max-w-[40ch] text-[0.72rem] leading-snug text-muted-2">
         Medora is educational, not medical advice. Talk to your doctor or pharmacist. Uses Ollama and a
         local database on your machine.
       </p>
