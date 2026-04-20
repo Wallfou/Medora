@@ -36,27 +36,35 @@ export function MedoraProvider({ children }) {
     navigate("/confirm");
   }, [navigate]);
 
-  const extractFromFile = useCallback(
-    async (imageFile) => {
-      if (!imageFile) {
-        setError("Choose a photo first.");
+  const extractFromFiles = useCallback(
+    async (imageFiles) => {
+      if (!imageFiles?.length) {
+        setError("Add at least one photo first.");
         return;
       }
       setError(null);
       setLoading(true);
       try {
-        const fd = new FormData();
-        fd.append("file", imageFile);
-        const data = await apiJson("/api/extract", { method: "POST", body: fd });
-        setFile(imageFile);
-        setRows(
-          data.items.map((it) => ({
-            id: nextId(),
-            drug_name: it.drug_name || "",
-            dosage: it.dosage || "",
-            normalized: it.normalized || "",
-          }))
-        );
+        const merged = [];
+        for (const imageFile of imageFiles) {
+          const fd = new FormData();
+          fd.append("file", imageFile);
+          const data = await apiJson("/api/extract", { method: "POST", body: fd });
+          for (const it of data.items || []) {
+            merged.push({
+              id: nextId(),
+              drug_name: it.drug_name || "",
+              dosage: it.dosage || "",
+              normalized: it.normalized || "",
+            });
+          }
+        }
+        if (!merged.length) {
+          setError("No medication names were found on those photos. Try clearer photos or add names manually from the home screen.");
+          return;
+        }
+        setFile(imageFiles[0]);
+        setRows(merged);
         navigate("/confirm");
       } catch (e) {
         setError(e.message);
@@ -65,6 +73,11 @@ export function MedoraProvider({ children }) {
       }
     },
     [navigate]
+  );
+
+  const extractFromFile = useCallback(
+    async (imageFile) => extractFromFiles(imageFile ? [imageFile] : []),
+    [extractFromFiles]
   );
 
   const updateRow = useCallback((id, field, value) => {
@@ -137,6 +150,7 @@ export function MedoraProvider({ children }) {
       setResult,
       goManual,
       extractFromFile,
+      extractFromFiles,
       updateRow,
       patchRow,
       addRow,
@@ -153,6 +167,7 @@ export function MedoraProvider({ children }) {
       result,
       goManual,
       extractFromFile,
+      extractFromFiles,
       updateRow,
       patchRow,
       addRow,

@@ -8,7 +8,7 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from backend import service
+from . import service
 
 app = FastAPI(title="Medora API", version="1.0.0")
 
