@@ -51,7 +51,7 @@ export default function ConfirmPage() {
             className="flex items-stretch gap-2 rounded-[14px] bg-white py-4 pl-4 pr-3 shadow-[0_1px_3px_rgba(0,0,0,0.06)]"
           >
             <div className="min-w-0 flex-1">
-              {r.drug_name ? (
+              {r.extracted && r.drug_name ? (
                 <>
                   <p className="m-0 text-[1.05rem] font-bold text-text">{r.drug_name}</p>
                   <p className="mb-0 mt-0.5 text-[0.88rem] text-muted">
@@ -99,8 +99,9 @@ export default function ConfirmPage() {
                 </>
               )}
             </div>
-            <div className="flex flex-col items-center justify-center gap-2 pl-1" aria-hidden>
+            <div className="flex flex-col items-center justify-center gap-2 pl-1">
               <span
+                aria-hidden
                 className="flex h-10 w-10 shrink-0 cursor-default items-center justify-center rounded-full border-none bg-emerald-100 text-primary"
                 title="Included"
               >

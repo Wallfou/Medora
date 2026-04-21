@@ -28,6 +28,7 @@ export function MedoraProvider({ children }) {
     setRows([
       {
         id: nextId(),
+        extracted: false,
         drug_name: "",
         dosage: "",
         normalized: "",
@@ -53,6 +54,7 @@ export function MedoraProvider({ children }) {
           for (const it of data.items || []) {
             merged.push({
               id: nextId(),
+              extracted: true,
               drug_name: it.drug_name || "",
               dosage: it.dosage || "",
               normalized: it.normalized || "",
@@ -95,7 +97,7 @@ export function MedoraProvider({ children }) {
   const addRow = useCallback(() => {
     setRows((prev) => [
       ...prev,
-      { id: nextId(), drug_name: "", dosage: "", normalized: "" },
+      { id: nextId(), extracted: false, drug_name: "", dosage: "", normalized: "" },
     ]);
   }, []);
 
