@@ -157,46 +157,50 @@ def generate_explanation(drug_names, interactions, beers_flags):
     interaction_text = ""
     if interactions:
         for ix in interactions:
-            icon = "🔴" if ix["severity"] == "major" else "🟡"
+            sev = "major" if ix["severity"] == "major" else "moderate"
             interaction_text += (
-                f"- {icon} {ix['drug1']} + {ix['drug2']} "
-                f"({ix['severity']}): {ix['description']} "
-                f"Management: {ix['management']}\n"
+                f"{ix['drug1']} and {ix['drug2']} together ({sev}): "
+                f"{ix['description'].strip()} If this happens, guidance is: {ix['management'].strip()}\n"
             )
     else:
-        interaction_text = "No drug-drug interactions found in database."
+        interaction_text = "No drug-drug interactions in our database for this list."
 
     beers_text = ""
     if beers_flags:
         for b in beers_flags:
             beers_text += (
-                f"- {b['drug']} ({b['drug_class']}): "
-                f"{b['recommendation']}. {b['rationale']} "
-                f"Alternatives: {b['alternatives']}\n"
+                f"Drug {b['drug']} ({b.get('drug_class') or 'unknown class'}): "
+                f"{b['recommendation'].strip()} "
+                f"Reason: {b['rationale'].strip()} "
+                f"Possible alternatives to ask about: {b['alternatives'].strip()}\n"
             )
 
-    prompt = f"""You are Medora, a friendly medication safety assistant.
-A patient is taking these medications: {', '.join(drug_names)}.
+    prompt = f"""You are Medora, a medication safety assistant speaking to an elderly
+patient or their caregiver.
 
-DRUG INTERACTIONS FOUND:
+They are taking: {", ".join(drug_names)}
+
+DATA FROM OUR CHECKS (for your eyes only; do not dump this back verbatim):
+DRUG-DRUG:
 {interaction_text}
-
-BEERS CRITERIA FLAGS (potentially inappropriate for elderly):
+BEERS (older adult safety flags):
 {beers_text if beers_text else "None flagged."}
 
-Please provide a clear, caring summary for the patient:
-1. Explain each interaction in simple language (as if talking to
-   a grandmother who is not a medical professional)
-2. For each Beers flag, explain why it may be risky for someone
-   over 65 and what alternatives exist
-3. List what to discuss with their doctor at the next visit
-4. End with a reminder that you are NOT replacing medical advice
-
-Keep it warm, clear, and actionable. Use emoji sparingly for
-severity: 🔴 Major  🟡 Moderate  🟢 Safe"""
+RULES:
+- Use short sentences. Maximum 15 words per sentence.
+- Use simple words. Say "bleeding" not "hemorrhage." Say "dangerous"
+  not "contraindicated."
+- NO medical jargon unless you immediately explain it in plain language.
+- NO bullet points, NO numbered lists, NO headings. Write as natural speech, like you are talking.
+- For each drug-drug interaction, use exactly three short sentences: what might happen, how serious it is, what to do. If there are many, say the most serious one or two in full, then one short sentence for the rest.
+- If there are Beers flags, add one or two short sentences in plain language. Skip if there were none.
+- Do not add a long introduction or closing essay. No "In conclusion." Say once that you are not a doctor if there is room.
+- End with exactly ONE clear next step for the patient.
+- Your ENTIRE reply must be under 150 words. Stop when you reach the next step. Do not continue after that."""
 
     response = ollama.chat(
         model=MODEL,
         messages=[{"role": "user", "content": prompt}],
+        options={"num_predict": 380},
     )
     return response["message"]["content"]
