@@ -1,27 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { FaFilePdf, FaPlus, FaCamera } from "react-icons/fa";
+import { BsChatDots } from "react-icons/bs";
 import { useMedora } from "../context/MedoraContext.jsx";
+
+const SEVERITY_ORDER = { major: 0, moderate: 1, minor: 2 };
 
 function IconAlertCircle({ className }) {
   return (
     <svg className={className} viewBox="0 0 24 24" width="22" height="22" fill="none" aria-hidden>
       <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" />
       <path d="M12 8v5M12 16h.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function IconDocument({ className }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" width="22" height="22" fill="none" aria-hidden>
-      <path
-        d="M7 3h6l4 4v12a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1z"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-      />
-      <path d="M13 3v4h4" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
-      <path d="M8.5 13h7M8.5 16h4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
     </svg>
   );
 }
@@ -51,63 +40,186 @@ function LearnMoreButton({ isOpen, onClick, id }) {
   );
 }
 
+function rowsToDrugKey(rows) {
+  return rows
+    .map((r) => (r.normalized || "").trim().toLowerCase())
+    .filter(Boolean)
+    .slice()
+    .sort()
+    .join("|");
+}
+
 export default function ResultsPage() {
   const navigate = useNavigate();
-  const { result, restart } = useMedora();
-  const [openIx, setOpenIx] = useState(() => ({}));
-  const [openBeers, setOpenBeers] = useState(() => ({}));
+  const {
+    rows,
+    result,
+    loading,
+    error,
+    updateRow,
+    patchRow,
+    addRow,
+    removeRow,
+    analyzeDrugs,
+    clearError,
+  } = useMedora();
+  const [openIx, setOpenIx] = useState({});
+  const [openBeers, setOpenBeers] = useState({});
+  const [focusId, setFocusId] = useState(null);
+  const inputRefs = useRef({});
+  const lastAnalyzedKey = useRef(result ? rowsToDrugKey(rows) : "");
 
   useEffect(() => {
-    if (!result) navigate("/", { replace: true });
-  }, [result, navigate]);
+    if (!rows.length && !result) navigate("/", { replace: true });
+  }, [rows.length, result, navigate]);
 
-  const interactionKeys = useMemo(
-    () =>
-      (result?.interactions || []).map(
-        (ix, i) => `${ix.drug1}-${ix.drug2}-${i}`
-      ) || [],
-    [result]
-  );
+  useEffect(() => {
+    const drugs = rows
+      .map((r) => (r.normalized || "").trim())
+      .filter(Boolean);
+    const key = rowsToDrugKey(rows);
+    if (key === lastAnalyzedKey.current) return;
+    const t = setTimeout(() => {
+      lastAnalyzedKey.current = key;
+      analyzeDrugs(drugs);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [rows, analyzeDrugs]);
 
-  if (!result) return null;
+  useEffect(() => {
+    if (focusId && inputRefs.current[focusId]) {
+      inputRefs.current[focusId].focus();
+      setFocusId(null);
+    }
+  }, [focusId, rows]);
 
-  const nIx = result.interactions.length;
-  const nBeers = result.beers_flags.length;
-  const hasSummary = Boolean(result.explanation && String(result.explanation).trim());
+  const sortedInteractions = useMemo(() => {
+    const list = (result?.interactions || []).slice();
+    list.sort((a, b) => {
+      const sa = SEVERITY_ORDER[a.severity] ?? 99;
+      const sb = SEVERITY_ORDER[b.severity] ?? 99;
+      return sa - sb;
+    });
+    return list;
+  }, [result]);
 
-  const editDrugList = () => {
-    navigate("/confirm");
+  if (!rows.length && !result) return null;
+
+  const nIx = sortedInteractions.length;
+  const nBeers = result?.beers_flags?.length || 0;
+  const hasDrugs = rows.some((r) => (r.normalized || "").trim());
+  const showSafe = result && hasDrugs && nIx === 0 && nBeers === 0;
+
+  const toggleIx = (key) => setOpenIx((p) => ({ ...p, [key]: !p[key] }));
+  const toggleBeers = (key) => setOpenBeers((p) => ({ ...p, [key]: !p[key] }));
+
+  const handleAddManual = () => {
+    clearError();
+    const id = addRow();
+    setFocusId(id);
   };
 
-  const toggleIx = (key) => {
-    setOpenIx((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
-
-  const toggleBeers = (key) => {
-    setOpenBeers((prev) => ({ ...prev, [key]: !prev[key] }));
+  const handleScanMore = () => {
+    clearError();
+    navigate("/camera");
   };
 
   return (
     <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden bg-[#f4f4f5] print:bg-white print:overflow-visible">
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 pt-4 print:overflow-visible print:pb-8 print:pt-2">
-        <header className="mb-2 flex items-start gap-2 print:hidden">
-          <button
-            type="button"
-            onClick={editDrugList}
-            className="cursor-pointer border-none bg-transparent p-1.5 text-2xl leading-none text-primary"
-            aria-label="Back to medication list"
-          >
-            ←
-          </button>
-        </header>
-
         <h1 className="m-0 text-[1.75rem] font-bold leading-tight tracking-tight text-text">
-          Your Medication Check
+          Your Medications
         </h1>
 
-        {nIx > 0 && (
+        {error && (
+          <div className="mt-3 rounded-[10px] bg-red-50 px-3.5 py-2.5 text-[0.85rem] text-red-700">
+            {error}
+          </div>
+        )}
+
+        <section className="mt-4">
+          <ul className="m-0 flex list-none flex-col gap-2.5 p-0">
+            {rows.map((r) => (
+              <li
+                key={r.id}
+                className="flex items-center gap-2 rounded-2xl bg-white p-3 shadow-[0_1px_3px_rgba(0,0,0,0.06)]"
+              >
+                <div className="min-w-0 flex-1">
+                  <input
+                    ref={(el) => {
+                      if (el) inputRefs.current[r.id] = el;
+                      else delete inputRefs.current[r.id];
+                    }}
+                    className="w-full border-none bg-transparent p-0 text-[1.05rem] font-bold text-text placeholder:font-medium placeholder:text-muted-2 focus:outline-none"
+                    value={r.normalized}
+                    onChange={(e) => {
+                      clearError();
+                      const v = e.target.value;
+                      if (r.extracted) {
+                        updateRow(r.id, "normalized", v);
+                      } else {
+                        patchRow(r.id, { normalized: v, drug_name: v });
+                      }
+                    }}
+                    placeholder="Medication name"
+                    autoComplete="off"
+                  />
+                  <input
+                    className="mt-0.5 w-full border-none bg-transparent p-0 text-[0.9rem] text-muted placeholder:text-muted-2 focus:outline-none"
+                    value={r.dosage}
+                    onChange={(e) => {
+                      clearError();
+                      updateRow(r.id, "dosage", e.target.value);
+                    }}
+                    placeholder="Dosage (optional)"
+                    autoComplete="off"
+                  />
+                </div>
+                <button
+                  type="button"
+                  className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full border-none bg-red-100 text-red-700 print:hidden"
+                  onClick={() => {
+                    clearError();
+                    removeRow(r.id);
+                  }}
+                  aria-label={`Remove ${r.normalized || r.drug_name || "medication"}`}
+                >
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none">
+                    <path
+                      d="M8 8l8 8M16 8l-8 8"
+                      stroke="currentColor"
+                      strokeWidth="2.2"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          <div className="mt-2.5 grid grid-cols-2 gap-2 print:hidden">
+            <button
+              type="button"
+              className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-primary/40 bg-white py-3 text-[0.9rem] font-semibold text-primary"
+              onClick={handleAddManual}
+            >
+              <FaPlus className="h-3 w-3" />
+              Add manually
+            </button>
+            <button
+              type="button"
+              className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-primary/40 bg-white py-3 text-[0.9rem] font-semibold text-primary"
+              onClick={handleScanMore}
+            >
+              <FaCamera className="h-3.5 w-3.5" />
+              Scan label
+            </button>
+          </div>
+        </section>
+
+        {result && nIx > 0 && (
           <div
-            className="mt-4 flex items-start gap-2.5 rounded-2xl border border-red-200 bg-red-50 px-3.5 py-3.5"
+            className="mt-6 flex items-start gap-2.5 rounded-2xl border border-red-200 bg-red-50 px-3.5 py-3.5"
             role="status"
           >
             <IconAlertCircle className="mt-0.5 shrink-0 text-red-600" />
@@ -119,9 +231,9 @@ export default function ResultsPage() {
           </div>
         )}
 
-        {nIx === 0 && nBeers > 0 && (
+        {result && nIx === 0 && nBeers > 0 && (
           <div
-            className="mt-4 flex items-start gap-2.5 rounded-2xl border border-amber-200 bg-amber-50 px-3.5 py-3.5"
+            className="mt-6 flex items-start gap-2.5 rounded-2xl border border-amber-200 bg-amber-50 px-3.5 py-3.5"
             role="status"
           >
             <p className="m-0 text-[1.1rem] font-bold leading-snug text-amber-900">
@@ -132,12 +244,19 @@ export default function ResultsPage() {
           </div>
         )}
 
-        {nIx === 0 && nBeers === 0 && (
-          <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-3.5 py-3.5">
+        {showSafe && (
+          <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-3.5 py-3.5">
             <p className="m-0 text-[1.05rem] font-semibold leading-snug text-emerald-900">
               No drug interaction pairs were found in our database for this list. Ask your
               doctor if you are unsure.
             </p>
+          </div>
+        )}
+
+        {loading && hasDrugs && (
+          <div className="mt-3 inline-flex items-center gap-2 text-[0.85rem] text-muted print:hidden">
+            <span className="h-3 w-3 animate-spin rounded-full border-[2px] border-primary/30 border-t-primary" />
+            Updating analysis…
           </div>
         )}
 
@@ -147,8 +266,8 @@ export default function ResultsPage() {
               Interactions
             </h2>
             <ul className="m-0 flex list-none flex-col gap-4 p-0">
-              {result.interactions.map((ix, i) => {
-                const key = interactionKeys[i];
+              {sortedInteractions.map((ix, i) => {
+                const key = `${ix.drug1}-${ix.drug2}-${i}`;
                 const isMajor = ix.severity === "major";
                 const label = isMajor
                   ? "Major"
@@ -180,6 +299,11 @@ export default function ResultsPage() {
                         {label}
                       </span>
                     </div>
+                    {desc && (
+                      <p className="m-0 mt-2 text-[0.95rem] leading-snug text-muted">
+                        {desc.length > 100 ? `${desc.slice(0, 100)}…` : desc}
+                      </p>
+                    )}
                     {canExpand ? (
                       <>
                         <LearnMoreButton
@@ -236,6 +360,11 @@ export default function ResultsPage() {
                         {b.drug}
                       </p>
                     </div>
+                    {rec && (
+                      <p className="m-0 mt-2 text-[0.95rem] leading-snug text-muted">
+                        {rec}
+                      </p>
+                    )}
                     {canExpandBeers ? (
                       <div>
                         <LearnMoreButton
@@ -249,7 +378,6 @@ export default function ResultsPage() {
                             role="region"
                             aria-labelledby={`beers-more-${i}`}
                           >
-                            {rec && <p className="m-0 mb-2 text-text">{rec}</p>}
                             {b.rationale && String(b.rationale).trim() && (
                               <p className="m-0 mb-2 text-muted">
                                 <span className="font-semibold text-text">Why: </span>
@@ -290,25 +418,17 @@ export default function ResultsPage() {
           className="mb-2.5 inline-flex w-full max-w-full cursor-pointer items-center justify-center gap-2.5 rounded-full bg-primary px-5 py-4 text-[1.12rem] font-bold text-white shadow-[0_6px_20px_rgba(45,122,94,0.3)]"
           onClick={() => window.print()}
         >
-          <IconDocument className="text-white" />
+          <FaFilePdf className="text-white" size={22} />
           Get Doctor Report
         </button>
-        <div className="flex flex-col gap-1.5 pb-1 text-center text-[0.95rem]">
-          <button
-            type="button"
-            onClick={editDrugList}
-            className="cursor-pointer border-none bg-transparent py-1.5 font-semibold text-primary"
-          >
-            Edit drug list
-          </button>
-          <button
-            type="button"
-            onClick={restart}
-            className="cursor-pointer border-none bg-transparent py-1.5 font-semibold text-muted"
-          >
-            New check
-          </button>
-        </div>
+        <button
+          type="button"
+          className="inline-flex w-full max-w-full cursor-pointer items-center justify-center gap-2.5 rounded-full border-2 border-primary bg-white px-5 py-3.5 text-[1.05rem] font-bold text-primary"
+          onClick={() => navigate("/ask")}
+        >
+          <BsChatDots className="text-primary" size={20} />
+          Ask Questions
+        </button>
       </div>
     </div>
   );

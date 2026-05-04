@@ -2,7 +2,9 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { useNavigate } from "react-router-dom";
@@ -11,6 +13,22 @@ import { apiJson } from "../lib/api.js";
 let rowId = 0;
 const nextId = () => ++rowId;
 
+const STORAGE_KEY = "medora.dashboard.v1";
+
+function loadStored() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return { rows: [], result: null };
+    const parsed = JSON.parse(raw);
+    return {
+      rows: Array.isArray(parsed.rows) ? parsed.rows : [],
+      result: parsed.result || null,
+    };
+  } catch {
+    return { rows: [], result: null };
+  }
+}
+
 const MedoraContext = createContext(null);
 
 export function MedoraProvider({ children }) {
@@ -18,8 +36,23 @@ export function MedoraProvider({ children }) {
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [rows, setRows] = useState([]);
-  const [result, setResult] = useState(null);
+  const initial = useMemo(() => loadStored(), []);
+  const [rows, setRows] = useState(() => {
+    for (const r of initial.rows) {
+      if (typeof r.id === "number" && r.id > rowId) rowId = r.id;
+    }
+    return initial.rows;
+  });
+  const [result, setResult] = useState(() => initial.result);
+  const analyzeReqRef = useRef(0);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ rows, result }));
+    } catch {
+      /* ignore */
+    }
+  }, [rows, result]);
 
   const goManual = useCallback(() => {
     setError(null);
@@ -66,7 +99,7 @@ export function MedoraProvider({ children }) {
           return;
         }
         setFile(imageFiles[0]);
-        setRows(merged);
+        setRows((prev) => (result && prev.length ? [...prev, ...merged] : merged));
         navigate("/confirm");
       } catch (e) {
         setError(e.message);
@@ -74,7 +107,7 @@ export function MedoraProvider({ children }) {
         setLoading(false);
       }
     },
-    [navigate]
+    [navigate, result]
   );
 
   const extractFromFile = useCallback(
@@ -95,10 +128,12 @@ export function MedoraProvider({ children }) {
   }, []);
 
   const addRow = useCallback(() => {
+    const id = nextId();
     setRows((prev) => [
       ...prev,
-      { id: nextId(), extracted: false, drug_name: "", dosage: "", normalized: "" },
+      { id, extracted: false, drug_name: "", dosage: "", normalized: "" },
     ]);
+    return id;
   }, []);
 
   const removeRow = useCallback((id) => {
@@ -128,11 +163,46 @@ export function MedoraProvider({ children }) {
     }
   }, [navigate, rows]);
 
+  const analyzeDrugs = useCallback(async (drugs) => {
+    setError(null);
+    if (!drugs.length) {
+      analyzeReqRef.current++;
+      setResult({
+        medications: [],
+        interactions: [],
+        beers_flags: [],
+        explanation: "",
+        major_count: 0,
+        moderate_count: 0,
+      });
+      return;
+    }
+    const myId = ++analyzeReqRef.current;
+    setLoading(true);
+    try {
+      const data = await apiJson("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ drugs }),
+      });
+      if (myId === analyzeReqRef.current) setResult(data);
+    } catch (e) {
+      if (myId === analyzeReqRef.current) setError(e.message);
+    } finally {
+      if (myId === analyzeReqRef.current) setLoading(false);
+    }
+  }, []);
+
   const restart = useCallback(() => {
     setFile(null);
     setRows([]);
     setResult(null);
     setError(null);
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
     navigate("/");
   }, [navigate]);
 
@@ -158,6 +228,7 @@ export function MedoraProvider({ children }) {
       addRow,
       removeRow,
       runAnalyze,
+      analyzeDrugs,
       restart,
     }),
     [
@@ -175,6 +246,7 @@ export function MedoraProvider({ children }) {
       addRow,
       removeRow,
       runAnalyze,
+      analyzeDrugs,
       restart,
     ]
   );

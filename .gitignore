@@ -50,8 +50,10 @@ datasets/*.xml
 datasets/*.zip
 
 # --- Frontend ---
-frontend/node_modules/
-frontend/dist/
+client/node_modules/
+client/dist/
+node_modules/
+dist/
 
 # --- Editors (optional; remove if you prefer sharing) ---
 .idea/
