@@ -66,6 +66,7 @@ export default function ResultsPage() {
   const [openIx, setOpenIx] = useState({});
   const [openBeers, setOpenBeers] = useState({});
   const [focusId, setFocusId] = useState(null);
+  const [drugsCollapsed, setDrugsCollapsed] = useState(false);
   const inputRefs = useRef({});
   const lastAnalyzedKey = useRef(result ? rowsToDrugKey(rows) : "");
 
@@ -115,6 +116,7 @@ export default function ResultsPage() {
 
   const handleAddManual = () => {
     clearError();
+    setDrugsCollapsed(false);
     const id = addRow();
     setFocusId(id);
   };
@@ -124,98 +126,130 @@ export default function ResultsPage() {
     navigate("/camera");
   };
 
+  const drugCount = rows.length;
+
   return (
     <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden bg-[#f4f4f5] print:bg-white print:overflow-visible">
-      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 pt-4 print:overflow-visible print:pb-8 print:pt-2">
-        <h1 className="m-0 text-[1.75rem] font-bold leading-tight tracking-tight text-text">
-          Your Medications
-        </h1>
-
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-5 pt-10 print:overflow-visible print:pb-8 print:pt-2">
         {error && (
-          <div className="mt-3 rounded-[10px] bg-red-50 px-3.5 py-2.5 text-[0.85rem] text-red-700">
+          <div className="mb-3 rounded-[10px] bg-red-50 px-3.5 py-2.5 text-[0.85rem] text-red-700">
             {error}
           </div>
         )}
 
-        <section className="mt-4">
-          <ul className="m-0 flex list-none flex-col gap-2.5 p-0">
-            {rows.map((r) => (
-              <li
-                key={r.id}
-                className="flex items-center gap-2 rounded-2xl bg-white p-3 shadow-[0_1px_3px_rgba(0,0,0,0.06)]"
-              >
-                <div className="min-w-0 flex-1">
-                  <input
-                    ref={(el) => {
-                      if (el) inputRefs.current[r.id] = el;
-                      else delete inputRefs.current[r.id];
-                    }}
-                    className="w-full border-none bg-transparent p-0 text-[1.05rem] font-bold text-text placeholder:font-medium placeholder:text-muted-2 focus:outline-none"
-                    value={r.normalized}
-                    onChange={(e) => {
-                      clearError();
-                      const v = e.target.value;
-                      if (r.extracted) {
-                        updateRow(r.id, "normalized", v);
-                      } else {
-                        patchRow(r.id, { normalized: v, drug_name: v });
-                      }
-                    }}
-                    placeholder="Medication name"
-                    autoComplete="off"
-                  />
-                  <input
-                    className="mt-0.5 w-full border-none bg-transparent p-0 text-[0.9rem] text-muted placeholder:text-muted-2 focus:outline-none"
-                    value={r.dosage}
-                    onChange={(e) => {
-                      clearError();
-                      updateRow(r.id, "dosage", e.target.value);
-                    }}
-                    placeholder="Dosage (optional)"
-                    autoComplete="off"
-                  />
-                </div>
-                <button
-                  type="button"
-                  className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full border-none bg-red-100 text-red-700 print:hidden"
-                  onClick={() => {
-                    clearError();
-                    removeRow(r.id);
-                  }}
-                  aria-label={`Remove ${r.normalized || r.drug_name || "medication"}`}
-                >
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none">
-                    <path
-                      d="M8 8l8 8M16 8l-8 8"
-                      stroke="currentColor"
-                      strokeWidth="2.2"
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                </button>
-              </li>
-            ))}
-          </ul>
+        <div className="rounded-3xl bg-white px-4 pt-4 pb-3 shadow-[0_2px_8px_rgba(0,0,0,0.07)]">
+          <button
+            type="button"
+            onClick={() => setDrugsCollapsed((v) => !v)}
+            className="flex w-full cursor-pointer items-center justify-between gap-2 border-none bg-transparent p-0 text-left print:cursor-default"
+            aria-expanded={!drugsCollapsed}
+            aria-controls="medications-section"
+          >
+            <h1 className="m-0 text-[1.75rem] font-bold leading-tight tracking-tight text-text">
+              Your Medications
+              {drugsCollapsed && drugCount > 0 && (
+                <span className="ml-2 inline-block text-[1rem] align-top translate-y-2 font-semibold text-muted">
+                  ({drugCount})
+                </span>
+              )}
+            </h1>
+            <svg
+              viewBox="0 0 24 24"
+              width="24"
+              height="24"
+              fill="none"
+              className={`shrink-0 text-muted transition-transform print:hidden ${
+                drugsCollapsed ? "" : "rotate-180"
+              }`}
+              aria-hidden
+            >
+              <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+          </button>
 
-          <div className="mt-2.5 grid grid-cols-2 gap-2 print:hidden">
-            <button
-              type="button"
-              className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-primary/40 bg-white py-3 text-[0.9rem] font-semibold text-primary"
-              onClick={handleAddManual}
-            >
-              <FaPlus className="h-3 w-3" />
-              Add manually
-            </button>
-            <button
-              type="button"
-              className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-primary/40 bg-white py-3 text-[0.9rem] font-semibold text-primary"
-              onClick={handleScanMore}
-            >
-              <FaCamera className="h-3.5 w-3.5" />
-              Scan label
-            </button>
-          </div>
-        </section>
+          <section
+            id="medications-section"
+            className={`mt-4 ${drugsCollapsed ? "hidden print:block" : ""}`}
+          >
+            <ul className="m-0 flex list-none flex-col gap-2.5 p-0">
+              {rows.map((r) => (
+                <li
+                  key={r.id}
+                  className="flex items-center gap-2 rounded-2xl bg-[#f4f4f5] p-3"
+                >
+                  <div className="min-w-0 flex-1">
+                    <input
+                      ref={(el) => {
+                        if (el) inputRefs.current[r.id] = el;
+                        else delete inputRefs.current[r.id];
+                      }}
+                      className="w-full border-none bg-transparent p-0 text-[1.25rem] font-bold text-text placeholder:font-medium placeholder:text-muted-2 focus:outline-none"
+                      value={r.normalized}
+                      onChange={(e) => {
+                        clearError();
+                        const v = e.target.value;
+                        if (r.extracted) {
+                          updateRow(r.id, "normalized", v);
+                        } else {
+                          patchRow(r.id, { normalized: v, drug_name: v });
+                        }
+                      }}
+                      placeholder="Medication name"
+                      autoComplete="off"
+                    />
+                    <input
+                      className="mt-0.5 w-full border-none bg-transparent p-0 text-[0.9rem] text-muted placeholder:text-muted-2 focus:outline-none"
+                      value={r.dosage}
+                      onChange={(e) => {
+                        clearError();
+                        updateRow(r.id, "dosage", e.target.value);
+                      }}
+                      placeholder="Dosage (optional)"
+                      autoComplete="off"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full border-none bg-red-100 text-red-700 print:hidden"
+                    onClick={() => {
+                      clearError();
+                      removeRow(r.id);
+                    }}
+                    aria-label={`Remove ${r.normalized || r.drug_name || "medication"}`}
+                  >
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none">
+                      <path
+                        d="M8 8l8 8M16 8l-8 8"
+                        stroke="currentColor"
+                        strokeWidth="2.2"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </button>
+                </li>
+              ))}
+            </ul>
+
+            <div className="mt-2.5 grid grid-cols-2 gap-2 print:hidden">
+              <button
+                type="button"
+                className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-primary/40 bg-white py-3 text-[0.9rem] font-semibold text-primary"
+                onClick={handleAddManual}
+              >
+                <FaPlus className="h-3 w-3" />
+                Add manually
+              </button>
+              <button
+                type="button"
+                className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-primary/40 bg-white py-3 text-[0.9rem] font-semibold text-primary"
+                onClick={handleScanMore}
+              >
+                <FaCamera className="h-3.5 w-3.5" />
+                Scan label
+              </button>
+            </div>
+          </section>
+        </div>
 
         {result && nIx > 0 && (
           <div
@@ -299,11 +333,6 @@ export default function ResultsPage() {
                         {label}
                       </span>
                     </div>
-                    {desc && (
-                      <p className="m-0 mt-2 text-[0.95rem] leading-snug text-muted">
-                        {desc.length > 100 ? `${desc.slice(0, 100)}…` : desc}
-                      </p>
-                    )}
                     {canExpand ? (
                       <>
                         <LearnMoreButton
