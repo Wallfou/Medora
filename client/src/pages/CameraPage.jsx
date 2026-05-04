@@ -17,7 +17,8 @@ export default function CameraPage() {
   const [selectedId, setSelectedId] = useState(null);
   const photosRef = useRef(photos);
   photosRef.current = photos;
-  const { extractFromFiles, loading, error, clearError } = useMedora();
+  const { extractFromFiles, loading, error, clearError, result } = useMedora();
+  const backTo = result ? "/results" : "/";
 
   const previewUrl = photos.find((p) => p.id === selectedId)?.url ?? null;
 
@@ -64,9 +65,9 @@ export default function CameraPage() {
     <div className="flex min-h-[min(100vh-2rem,780px)] max-h-[min(100dvh-2rem,900px)] flex-1 flex-col overflow-hidden bg-camera-bg">
       <div className="flex shrink-0 items-center justify-between gap-2 px-4 pb-2 pt-3">
         <Link
-          to="/"
+          to={backTo}
           className="p-1 text-xl leading-none text-slate-200 hover:text-white"
-          aria-label="Back to home"
+          aria-label={result ? "Back to dashboard" : "Back to home"}
         >
           ←
         </Link>
