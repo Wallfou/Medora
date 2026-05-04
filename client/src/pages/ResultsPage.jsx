@@ -251,33 +251,6 @@ export default function ResultsPage() {
           </section>
         </div>
 
-        {result && nIx > 0 && (
-          <div
-            className="mt-6 flex items-start gap-2.5 rounded-2xl border border-red-200 bg-red-50 px-3.5 py-3.5"
-            role="status"
-          >
-            <IconAlertCircle className="mt-0.5 shrink-0 text-red-600" />
-            <p className="m-0 text-[1.1rem] font-bold leading-snug text-red-800">
-              {nIx === 1
-                ? "1 interaction needs attention"
-                : `${nIx} interactions need attention`}
-            </p>
-          </div>
-        )}
-
-        {result && nIx === 0 && nBeers > 0 && (
-          <div
-            className="mt-6 flex items-start gap-2.5 rounded-2xl border border-amber-200 bg-amber-50 px-3.5 py-3.5"
-            role="status"
-          >
-            <p className="m-0 text-[1.1rem] font-bold leading-snug text-amber-900">
-              {nBeers === 1
-                ? "1 age-related note to review"
-                : `${nBeers} age-related notes to review`}
-            </p>
-          </div>
-        )}
-
         {showSafe && (
           <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-3.5 py-3.5">
             <p className="m-0 text-[1.05rem] font-semibold leading-snug text-emerald-900">
@@ -296,8 +269,8 @@ export default function ResultsPage() {
 
         {nIx > 0 && (
           <section className="mt-7">
-            <h2 className="m-0 mb-3.5 text-[0.7rem] font-bold uppercase tracking-[0.12em] text-muted-2">
-              Interactions
+            <h2 className="m-0 px-2 mb-3.5 flex items-center gap-2 text-xl font-bold uppercase tracking-[0.06em]">
+              Interactions Issues
             </h2>
             <ul className="m-0 flex list-none flex-col gap-4 p-0">
               {sortedInteractions.map((ix, i) => {
@@ -315,8 +288,7 @@ export default function ResultsPage() {
                 return (
                   <li
                     key={key}
-                    className="rounded-2xl border border-gray-200/80 border-l-4 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.06)]"
-                    style={{ borderLeftColor: isMajor ? "#dc2626" : "#d97706" }}
+                    className="rounded-2xl border border-gray-200/80 bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.06)]"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <p className="m-0 text-[1.2rem] font-bold leading-tight text-text">
@@ -325,11 +297,10 @@ export default function ResultsPage() {
                       <span
                         className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1.5 text-[0.75rem] font-bold uppercase tracking-wide ${
                           isMajor
-                            ? "bg-red-100 text-red-800"
-                            : "bg-amber-100 text-amber-900"
+                            ? "bg-red-800 text-white"
+                            : "bg-amber-400 text-amber-800"
                         }`}
                       >
-                        {isMajor && <IconAlertCircle className="h-3.5 w-3.5 text-red-600" />}
                         {label}
                       </span>
                     </div>
@@ -366,7 +337,7 @@ export default function ResultsPage() {
 
         {nBeers > 0 && (
           <section className="mt-8">
-            <h2 className="m-0 mb-3.5 text-[0.7rem] font-bold uppercase tracking-[0.12em] text-muted-2">
+            <h2 className="m-0 mb-3.5 text-xl font-bold uppercase tracking-[0.06em]">
               Age-Related Considerations
             </h2>
             <ul className="m-0 flex list-none flex-col gap-4 p-0">
