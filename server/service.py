@@ -188,7 +188,7 @@ def answer_question(question, drug_names, history):
     response = ollama.chat(
         model=MODEL,
         messages=messages,
-        options={"num_predict": 380},
+        options={"num_predict": 1024},
     )
     return response["message"]["content"]
 

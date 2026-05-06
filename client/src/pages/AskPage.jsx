@@ -107,19 +107,21 @@ export default function AskPage() {
         <ul className="m-0 flex list-none flex-col gap-3 p-0">
           {messages.map((m, i) => {
             const isUser = m.role === "user";
+            const text = (m.content || "").trim();
+            const display = text || "(no response — please try again)";
             return (
               <li
                 key={i}
                 className={`flex ${isUser ? "justify-end" : "justify-start"}`}
               >
                 <div
-                  className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-3 text-[1rem] leading-snug shadow-[0_1px_2px_rgba(0,0,0,0.06)] ${
+                  className={`max-w-[85%] min-w-0 whitespace-pre-wrap break-words rounded-2xl px-4 py-3 text-[1rem] leading-snug shadow-[0_1px_2px_rgba(0,0,0,0.06)] ${
                     isUser
                       ? "rounded-br-sm bg-primary text-white"
-                      : "rounded-bl-sm bg-white text-text"
+                      : `rounded-bl-sm bg-white ${text ? "text-text" : "text-muted italic"}`
                   }`}
                 >
-                  {m.content}
+                  {display}
                 </div>
               </li>
             );
