@@ -153,28 +153,15 @@ def extract_drugs_from_image(image_path):
 
 def answer_question(question, drug_names, history):
     """follow up question chatbot, answer a patient's question with medication context"""
-    interactions = find_interactions(drug_names) if drug_names else []
-
-    interaction_text = ""
-    if interactions:
-        for ix in interactions:
-            sev = "major" if ix["severity"] == "major" else "moderate"
-            interaction_text += (
-                f"{ix['drug1']} and {ix['drug2']} together ({sev}): "
-                f"{ix['description'].strip()}\n"
-            )
-    else:
-        interaction_text = "None known in our database."
-
-    meds_str = ", ".join(drug_names) if drug_names else "no medications listed"
+    meds_str = ", ".join(drug_names) if drug_names else "none listed"
 
     system_prompt = (
-        "You are Medora, a medication safety assistant. "
+        "You are Medora, a warm and knowledgeable medication safety assistant. "
         f"The patient takes these medications: {meds_str}. "
-        "Known interactions for this list:\n"
-        f"{interaction_text}"
-        "Answer their question in short, simple sentences. "
-        "Always end by recommending they talk to their doctor about changes."
+        "Use short, simple sentences. Explain medical terms in plain language. "
+        "Share standard patient education information freely. "
+        "Defer diagnosis and dosage decisions to doctors. "
+        "Never repeat the same disclaimer twice in a row."
     )
 
     messages = [{"role": "system", "content": system_prompt}]
