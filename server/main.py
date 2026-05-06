@@ -44,6 +44,21 @@ class AnalyzeResponse(BaseModel):
     moderate_count: int
 
 
+class ChatTurn(BaseModel):
+    role: str
+    content: str
+
+
+class AskRequest(BaseModel):
+    question: str = Field(..., min_length=1)
+    medications: List[str] = Field(default_factory=list)
+    history: List[ChatTurn] = Field(default_factory=list)
+
+
+class AskResponse(BaseModel):
+    response: str
+
+
 @app.get("/api/health")
 def health():
     return {"status": "ok", "db": service.DB_FILE, "model": service.MODEL}
@@ -141,3 +156,24 @@ def analyze(body: AnalyzeRequest):
         major_count=major,
         moderate_count=moderate,
     )
+
+
+@app.post("/api/ask", response_model=AskResponse)
+def ask(body: AskRequest):
+    """Follow-up chat with medication context"""
+    question = body.question.strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="Question is required.")
+
+    meds = [m.strip() for m in body.medications if m and m.strip()]
+    history = [{"role": t.role, "content": t.content} for t in body.history]
+
+    try:
+        text = service.answer_question(question, meds, history)
+    except Exception as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"LLM error (is Ollama running with {service.MODEL}?): {e}",
+        ) from e
+
+    return AskResponse(response=text)
