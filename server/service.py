@@ -9,7 +9,7 @@ import sqlite3
 import ollama
 
 DB_FILE = os.environ.get("MEDORA_DB", "medora.db")
-MODEL = os.environ.get("MEDORA_MODEL", "gemma4:e2b")
+MODEL = os.environ.get("MEDORA_MODEL", "medora-gemma4")
 
 
 def get_db():

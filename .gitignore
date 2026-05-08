@@ -49,6 +49,12 @@ htmlcov/
 datasets/*.xml
 datasets/*.zip
 
+# --- Training: large artifacts (commit notebooks + Modelfile only) ---
+*.gguf
+*.zip
+training/medora-gemma4-gguf_gguf/*.gguf
+training/*.zip
+
 # --- Frontend ---
 client/node_modules/
 client/dist/
