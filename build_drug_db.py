@@ -330,6 +330,7 @@ def create_db():
     db.executescript("""
         DROP TABLE IF EXISTS interactions;
         DROP TABLE IF EXISTS beers_criteria;
+        DROP TABLE IF EXISTS drug_profiles;
         DROP TABLE IF EXISTS drugs;
 
         CREATE TABLE drugs (
@@ -357,6 +358,16 @@ def create_db():
             severity TEXT,
             alternatives TEXT,
             UNIQUE(drug_name, drug_class)
+        );
+
+        CREATE TABLE drug_profiles (
+            name TEXT PRIMARY KEY,
+            indication TEXT,
+            description_short TEXT,
+            drug_class TEXT,
+            side_effects TEXT,
+            route TEXT,
+            FOREIGN KEY (name) REFERENCES drugs(name)
         );
     """)
     return db
