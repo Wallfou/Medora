@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FaArrowLeft, FaPaperPlane } from "react-icons/fa";
+import ReactMarkdown from "react-markdown";
 import { useMedora } from "../context/MedoraContext.jsx";
 import { apiJson } from "../lib/api.js";
 
@@ -115,13 +116,27 @@ export default function AskPage() {
                 className={`flex ${isUser ? "justify-end" : "justify-start"}`}
               >
                 <div
-                  className={`max-w-[85%] min-w-0 whitespace-pre-wrap break-words rounded-2xl px-4 py-3 text-[1rem] leading-snug shadow-[0_1px_2px_rgba(0,0,0,0.06)] ${
+                  className={`max-w-[85%] min-w-0 break-words rounded-2xl px-4 py-3 text-[1rem] leading-snug shadow-[0_1px_2px_rgba(0,0,0,0.06)] ${
                     isUser
                       ? "rounded-br-sm bg-primary text-white"
                       : `rounded-bl-sm bg-white ${text ? "text-text" : "text-muted italic"}`
                   }`}
                 >
-                  {display}
+                  {isUser ? (
+                    <span className="whitespace-pre-wrap">{display}</span>
+                  ) : (
+                    <ReactMarkdown
+                      components={{
+                        p: ({ children }) => <p className="m-0 mb-2 last:mb-0">{children}</p>,
+                        strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                        ul: ({ children }) => <ul className="my-1 ml-4 list-disc">{children}</ul>,
+                        ol: ({ children }) => <ol className="my-1 ml-4 list-decimal">{children}</ol>,
+                        li: ({ children }) => <li className="mb-0.5">{children}</li>,
+                      }}
+                    >
+                      {display}
+                    </ReactMarkdown>
+                  )}
                 </div>
               </li>
             );
