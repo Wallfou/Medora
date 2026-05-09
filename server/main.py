@@ -61,7 +61,12 @@ class AskResponse(BaseModel):
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "db": service.DB_FILE, "model": service.MODEL}
+    return {
+        "status": "ok",
+        "db": service.DB_FILE,
+        "text_model": service.TEXT_MODEL,
+        "vision_model": service.VISION_MODEL,
+    }
 
 
 @app.post("/api/extract", response_model=ExtractResponse)
@@ -91,7 +96,7 @@ async def extract_from_image(file: UploadFile = File(...)):
                 status_code=502,
                 detail=(
                     f"Vision model error (is Ollama running with "
-                    f"{service.MODEL}?): {e}"
+                    f"{service.VISION_MODEL}?): {e}"
                 ),
             ) from e
     finally:
@@ -142,7 +147,7 @@ def analyze(body: AnalyzeRequest):
     except Exception as e:
         raise HTTPException(
             status_code=502,
-            detail=f"LLM error (is Ollama running with {service.MODEL}?): {e}",
+            detail=f"LLM error (is Ollama running with {service.TEXT_MODEL}?): {e}",
         ) from e
 
     major = sum(1 for i in interactions if i.get("severity") == "major")
@@ -173,7 +178,7 @@ def ask(body: AskRequest):
     except Exception as e:
         raise HTTPException(
             status_code=502,
-            detail=f"LLM error (is Ollama running with {service.MODEL}?): {e}",
+            detail=f"LLM error (is Ollama running with {service.TEXT_MODEL}?): {e}",
         ) from e
 
     return AskResponse(response=text)

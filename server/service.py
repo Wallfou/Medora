@@ -9,7 +9,8 @@ import sqlite3
 import ollama
 
 DB_FILE = os.environ.get("MEDORA_DB", "medora.db")
-MODEL = os.environ.get("MEDORA_MODEL", "medora-gemma4")
+TEXT_MODEL = os.environ.get("MEDORA_TEXT_MODEL", "medora-gemma4-text")
+VISION_MODEL = os.environ.get("MEDORA_VISION_MODEL", "gemma4:e2b")
 
 
 def get_db():
@@ -118,7 +119,7 @@ def extract_drugs_from_image(image_path):
         img_b64 = base64.b64encode(f.read()).decode()
 
     response = ollama.chat(
-        model=MODEL,
+        model=VISION_MODEL,
         messages=[
             {
                 "role": "user",
@@ -173,7 +174,7 @@ def answer_question(question, drug_names, history):
     messages.append({"role": "user", "content": question})
 
     response = ollama.chat(
-        model=MODEL,
+        model=TEXT_MODEL,
         messages=messages,
         options={"num_predict": 1024},
     )
@@ -228,7 +229,7 @@ RULES:
 - Your ENTIRE reply must be under 150 words. Stop when you reach the next step. Do not continue after that."""
 
     response = ollama.chat(
-        model=MODEL,
+        model=TEXT_MODEL,
         messages=[{"role": "user", "content": prompt}],
         options={"num_predict": 380},
     )
