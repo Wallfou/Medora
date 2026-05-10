@@ -459,13 +459,79 @@ def load_beers_criteria(db):
     print(f"{count} Beers Criteria entries loaded\n")
 
 
-def load_drugbank_interactions(db, xml_path=None):
-    """Parse DrugBank XML and add drug-drug interactions; preserve curated rows."""
+def _truncate_text(text, max_chars):
+    """Cut to a sentence boundary near max_chars; otherwise hard-truncate"""
+    if not text:
+        return ""
+    text = text.strip()
+    if len(text) <= max_chars:
+        return text
+    cut = text[:max_chars]
+    last_period = cut.rfind(". ")
+    if last_period > max_chars * 0.6:
+        return cut[: last_period + 1]
+    return cut.rstrip() + "..."
+
+
+def _extract_profile(elem, ns):
+    """Pull patient relevant fields from a drug XML element"""
+
+    def text_of(tag):
+        el = elem.find(f"{ns}{tag}")
+        return el.text.strip() if (el is not None and el.text) else ""
+
+    indication = _truncate_text(text_of("indication"), 400)
+    description_short = _truncate_text(text_of("description"), 400)
+    side_effects = _truncate_text(text_of("toxicity"), 500)
+
+    cats_el = elem.find(f"{ns}categories")
+    cat_names = []
+    if cats_el is not None:
+        for cat in cats_el.findall(f"{ns}category"):
+            inner = cat.find(f"{ns}category")
+            if inner is not None and inner.text:
+                cat_names.append(inner.text.strip())
+            if len(cat_names) >= 2:
+                break
+    drug_class = ", ".join(cat_names)
+
+    products_el = elem.find(f"{ns}products")
+    brand_names = []
+    seen_brands = set()
+    routes = set()
+    if products_el is not None:
+        for prod in products_el.findall(f"{ns}product"):
+            name_el = prod.find(f"{ns}name")
+            if name_el is not None and name_el.text:
+                bn = name_el.text.strip()
+                key = bn.lower()
+                if bn and key not in seen_brands and len(brand_names) < 5:
+                    seen_brands.add(key)
+                    brand_names.append(bn)
+            r_el = prod.find(f"{ns}route")
+            if r_el is not None and r_el.text:
+                routes.add(r_el.text.strip().lower())
+
+    return {
+        "indication": indication,
+        "description_short": description_short,
+        "drug_class": drug_class,
+        "side_effects": side_effects,
+        "route": ", ".join(sorted(routes)[:3]),
+        "brand_names": json.dumps(brand_names),
+    }
+
+
+def load_drugbank_data(db, xml_path=None):
+    """Parse DrugBank XML in one pass, drug-drug interactions and patient relevant profiles
+
+    Curated interaction rows are preserved
+    Profiles populate the drug_profiles table and the drugs.brand_names column
+    """
     path = xml_path or DRUGBANK_XML
     if not os.path.isfile(path):
         print(
             f"=== 4. DrugBank XML skipped (not found: {path})\n"
-            f"    Unzip the DrugBank full database XML into datasets/ to load DDIs.\n"
         )
         return
 
@@ -476,11 +542,12 @@ def load_drugbank_interactions(db, xml_path=None):
         pass
 
     before = db.execute("SELECT COUNT(*) FROM interactions").fetchone()[0]
-    print(f"=== 4. Loading DrugBank interactions from {path}")
+    print(f"=== 4. Loading DrugBank data from {path}")
     print(f"    Interactions before import: {before}\n")
 
     drug_count = 0
     interaction_count = 0
+    profile_count = 0
     skipped = 0
 
     context = ET.iterparse(path, events=("end",))
@@ -514,16 +581,38 @@ def load_drugbank_interactions(db, xml_path=None):
             (name_lower,),
         ).fetchone()
 
+        profile = _extract_profile(elem, ns)
+
         if existing:
             db.execute(
-                "UPDATE drugs SET drugbank_id = ? WHERE name = ?",
-                (dbid, name_lower),
+                "UPDATE drugs SET drugbank_id = ?, brand_names = ? WHERE name = ?",
+                (dbid, profile["brand_names"], name_lower),
             )
         else:
             db.execute(
-                "INSERT OR IGNORE INTO drugs (name, drugbank_id) VALUES (?, ?)",
-                (name_lower, dbid),
+                "INSERT OR IGNORE INTO drugs (name, drugbank_id, brand_names) "
+                "VALUES (?, ?, ?)",
+                (name_lower, dbid, profile["brand_names"]),
             )
+
+        if any(
+            profile[k]
+            for k in ("indication", "description_short", "drug_class", "side_effects", "route")
+        ):
+            db.execute(
+                """INSERT OR REPLACE INTO drug_profiles
+                   (name, indication, description_short, drug_class, side_effects, route)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    name_lower,
+                    profile["indication"],
+                    profile["description_short"],
+                    profile["drug_class"],
+                    profile["side_effects"],
+                    profile["route"],
+                ),
+            )
+            profile_count += 1
 
         ddi_el = elem.find(f"{ns}drug-interactions")
         if ddi_el is not None:
@@ -592,7 +681,8 @@ def load_drugbank_interactions(db, xml_path=None):
             db.commit()
             print(
                 f"    Processed {drug_count} drugs, "
-                f"{interaction_count} new DrugBank interactions..."
+                f"{interaction_count} new interactions, "
+                f"{profile_count} profiles..."
             )
 
         elem.clear()
@@ -602,12 +692,14 @@ def load_drugbank_interactions(db, xml_path=None):
     drugbank_rows = db.execute(
         "SELECT COUNT(*) FROM interactions WHERE source = 'drugbank'"
     ).fetchone()[0]
+    profile_total = db.execute("SELECT COUNT(*) FROM drug_profiles").fetchone()[0]
     print(
         f"\n    Drugs processed: {drug_count}\n"
         f"    New DrugBank interaction rows attempted: {interaction_count}\n"
         f"    Curated pairs skipped: {skipped}\n"
         f"    Total interactions now: {after} "
         f"({drugbank_rows} from DrugBank)\n"
+        f"    Drug profiles loaded: {profile_total}\n"
     )
 
 
@@ -621,11 +713,13 @@ def print_summary(db):
     drugbank_ix = db.execute(
         "SELECT COUNT(*) FROM interactions WHERE source = 'drugbank'"
     ).fetchone()[0]
+    profiles = db.execute("SELECT COUNT(*) FROM drug_profiles").fetchone()[0]
 
     print("=" * 25)
     print("  Medora Database Summary")
     print("=" * 25)
     print(f"  Drugs:              {drugs}")
+    print(f"  Drug profiles:      {profiles}")
     print(f"  Interactions:       {interactions} ({major} major)")
     print(f"    DrugBank-sourced: {drugbank_ix}")
     print(f"  Beers Criteria:     {beers} entries")
@@ -647,7 +741,7 @@ def main():
     load_rxcui(db)
     load_curated_interactions(db)
     load_beers_criteria(db)
-    load_drugbank_interactions(db)
+    load_drugbank_data(db)
     print_summary(db)
     db.close()
     print("Done!")
