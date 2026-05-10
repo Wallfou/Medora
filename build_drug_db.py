@@ -366,6 +366,7 @@ def create_db():
             description_short TEXT,
             drug_class TEXT,
             side_effects TEXT,
+            side_effects_summary TEXT,
             route TEXT,
             FOREIGN KEY (name) REFERENCES drugs(name)
         );

@@ -11,10 +11,95 @@ import ollama
 DB_FILE = os.environ.get("MEDORA_DB", "medora.db")
 TEXT_MODEL = os.environ.get("MEDORA_TEXT_MODEL", "medora-gemma4-text")
 VISION_MODEL = os.environ.get("MEDORA_VISION_MODEL", "gemma4:e2b")
+SUMMARY_MODEL = os.environ.get("MEDORA_SUMMARY_MODEL", "gemma4:e2b")
 
 
 def get_db():
     return sqlite3.connect(DB_FILE)
+
+
+def _ensure_profile_schema():
+    """One time migration: add summary cache column if the DB predates it"""
+    db = get_db()
+    try:
+        db.execute(
+            "ALTER TABLE drug_profiles ADD COLUMN side_effects_summary TEXT"
+        )
+        db.commit()
+    except sqlite3.OperationalError:
+        pass
+    finally:
+        db.close()
+
+
+_ensure_profile_schema()
+
+
+def _summarize_side_effects(drug_name, raw_text):
+    """Ask the local LLM to compress DrugBank toxicity prose into 2-3 sentences"""
+    prompt = (
+        f"You are summarizing medication safety information for a patient.\n\n"
+        f"DRUG: {drug_name}\n\n"
+        f"TECHNICAL TEXT:\n{raw_text}\n\n"
+        f"Write 2 to 3 short sentences listing the most common side effects a patient "
+        f"should know about. Use everyday words. Do not mention animal studies, LD50 "
+        f"values, dosages in mg/kg, or overdose treatment. Do not start with phrases "
+        f"like 'This drug' or 'The drug'. Just describe the side effects naturally.\n\n"
+        f"PATIENT SUMMARY:"
+    )
+    response = ollama.chat(
+        model=SUMMARY_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        options={"num_predict": 180, "temperature": 0.2},
+    )
+    return response["message"]["content"].strip()
+
+
+def get_drug_profile(name):
+    """Fetch a drug profile, summarizing side effects on first access and caching the result.
+    Subsequent calls return the cached result
+
+    Returns a dict, or None if the drug has no profile row.
+    """
+    name_lower = (name or "").lower().strip()
+    if not name_lower:
+        return None
+
+    db = get_db()
+    row = db.execute(
+        """SELECT indication, description_short, drug_class,
+                  side_effects, side_effects_summary, route
+           FROM drug_profiles WHERE name = ?""",
+        (name_lower,),
+    ).fetchone()
+
+    if not row:
+        db.close()
+        return None
+
+    indication, description, drug_class, raw_side, summary, route = row
+
+    if not summary and raw_side:
+        try:
+            summary = _summarize_side_effects(name_lower, raw_side)
+            if summary:
+                db.execute(
+                    "UPDATE drug_profiles SET side_effects_summary = ? WHERE name = ?",
+                    (summary, name_lower),
+                )
+                db.commit()
+        except Exception:
+            summary = ""
+
+    db.close()
+    return {
+        "name": name_lower,
+        "indication": indication or "",
+        "description": description or "",
+        "drug_class": drug_class or "",
+        "side_effects": summary or raw_side or "",
+        "route": route or "",
+    }
 
 
 def find_interactions(drug_names):
