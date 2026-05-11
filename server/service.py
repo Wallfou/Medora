@@ -2,9 +2,11 @@
 
 import base64
 import json
+import logging
 import os
 import re
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 
 import ollama
 
@@ -12,6 +14,12 @@ DB_FILE = os.environ.get("MEDORA_DB", "medora.db")
 TEXT_MODEL = os.environ.get("MEDORA_TEXT_MODEL", "medora-gemma4-text")
 VISION_MODEL = os.environ.get("MEDORA_VISION_MODEL", "gemma4:e2b")
 SUMMARY_MODEL = os.environ.get("MEDORA_SUMMARY_MODEL", "gemma4:e2b")
+SUMMARY_TIMEOUT_S = float(os.environ.get("MEDORA_SUMMARY_TIMEOUT", "20"))
+
+_logger = logging.getLogger(__name__)
+_summary_executor = ThreadPoolExecutor(
+    max_workers=2, thread_name_prefix="medora-summarize"
+)
 
 
 def get_db():
@@ -36,7 +44,10 @@ _ensure_profile_schema()
 
 
 def _summarize_side_effects(drug_name, raw_text):
-    """Ask the local LLM to compress DrugBank toxicity prose into 2-3 sentences"""
+    """Ask the local LLM to compress DrugBank toxicity prose into 2-3 sentences
+
+    Uses a per-call ollama.Client so the HTTP request times out instead of hanging
+    """
     prompt = (
         f"You are summarizing medication safety information for a patient.\n\n"
         f"DRUG: {drug_name}\n\n"
@@ -47,7 +58,8 @@ def _summarize_side_effects(drug_name, raw_text):
         f"like 'This drug' or 'The drug'. Just describe the side effects naturally.\n\n"
         f"PATIENT SUMMARY:"
     )
-    response = ollama.chat(
+    client = ollama.Client(timeout=SUMMARY_TIMEOUT_S)
+    response = client.chat(
         model=SUMMARY_MODEL,
         messages=[{"role": "user", "content": prompt}],
         options={"num_predict": 180, "temperature": 0.2},
@@ -55,9 +67,64 @@ def _summarize_side_effects(drug_name, raw_text):
     return response["message"]["content"].strip()
 
 
+def _summarize_and_cache(name_lower):
+    """Background worker: summarize one drug's side effects and write to the cache.
+
+    No-ops if the cache is already populated or there is no raw text to summarize.
+    Failures are logged and swallowed so the next call retries.
+    """
+    db = get_db()
+    try:
+        row = db.execute(
+            "SELECT side_effects, side_effects_summary "
+            "FROM drug_profiles WHERE name = ?",
+            (name_lower,),
+        ).fetchone()
+        if not row:
+            return
+        raw_side, summary = row
+        if summary or not raw_side:
+            return
+        
+        try:
+            new_summary = _summarize_side_effects(name_lower, raw_side)
+        except Exception as e:
+            _logger.warning(
+                "Side effects summarization failed for %s: %s", name_lower, e
+            )
+            return
+        if new_summary:
+            db.execute(
+                "UPDATE drug_profiles SET side_effects_summary = ? "
+                "WHERE name = ?",
+                (new_summary, name_lower),
+            )
+            db.commit()
+    finally:
+        db.close()
+
+
+def warm_drug_profiles(names):
+    """Schedule background side-effects summarization for any uncached drugs.
+
+    This is called proactively at /api/analyze so summaries are likely ready by the time
+    the patient navigates to chat. The thread pool is bounded by 2, so tasks queue if busy.
+    """
+    if not names:
+        return
+    seen = set()
+    for n in names:
+        n_lower = (n or "").lower().strip()
+        if not n_lower or n_lower in seen:
+            continue
+        seen.add(n_lower)
+        _summary_executor.submit(_summarize_and_cache, n_lower)
+
+
 def get_drug_profile(name):
-    """Fetch a drug profile, summarizing side effects on first access and caching the result.
-    Subsequent calls return the cached result
+    """Fetch a cached drug profile. Returns raw side_effects if the summary is not
+    yet processed. Use warm_drug_profiles() at /api/analyze
+    to fill the cache ahead of chat.
 
     Returns a dict, or None if the drug has no profile row.
     """
@@ -72,26 +139,13 @@ def get_drug_profile(name):
            FROM drug_profiles WHERE name = ?""",
         (name_lower,),
     ).fetchone()
+    db.close()
 
     if not row:
-        db.close()
         return None
 
     indication, description, drug_class, raw_side, summary, route = row
 
-    if not summary and raw_side:
-        try:
-            summary = _summarize_side_effects(name_lower, raw_side)
-            if summary:
-                db.execute(
-                    "UPDATE drug_profiles SET side_effects_summary = ? WHERE name = ?",
-                    (summary, name_lower),
-                )
-                db.commit()
-        except Exception:
-            summary = ""
-
-    db.close()
     return {
         "name": name_lower,
         "indication": indication or "",

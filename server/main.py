@@ -137,6 +137,8 @@ def analyze(body: AnalyzeRequest):
 
     names = list(dict.fromkeys(service.normalize_drug_name(d) for d in raw))
 
+    service.warm_drug_profiles(names)
+
     interactions = service.find_interactions(names)
     beers_flags = service.find_beers_flags(names)
 
