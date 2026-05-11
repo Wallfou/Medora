@@ -1,6 +1,7 @@
 """SQLite, Ollama vision + text."""
 
 import base64
+import html
 import json
 import logging
 import os
@@ -64,66 +65,159 @@ def _resolve_to_profile_name(db, name_lower):
     return row[0] if row else name_lower
 
 
-def _summarize_side_effects(drug_name, raw_text):
-    """Ask the local LLM to compress DrugBank toxicity prose into 2-3 sentences
+_CITATION_RE = re.compile(r"\[[A-Za-z0-9 ,.\-]+\]")
+_TAG_RE = re.compile(r"<[^>]+>")
+_WS_RE = re.compile(r"\s+")
+_DOSE_RE = re.compile(
+    r"\b\d+(?:[.,]\d+)?\s*"
+    r"(?:mg|g|mcg|µg|ng|kg|ml|l|grams?|grains?|tablets?|capsules?)"
+    r"(?:/kg|/day|/hour|/min|/m2)?\b",
+    re.IGNORECASE,
+)
 
-    Uses a per-call ollama.Client so the HTTP request times out instead of hanging
+
+def _clean_raw_text(raw):
+    """Normalize DrugBank text for small-model consumption.
+
+    Strips citation markers, HTML tags/entities, and collapses whitespace.
+    Also neutralizes specific dose values like "99 mg/kg" -- Gemma's safety
+    alignment cuts off mid-sentence when about to emit dose thresholds, so
+    the model literally refuses to finish summarizing if the input primes
+    it with one.
     """
-    prompt = (
-        f"You are summarizing medication safety information for a patient.\n\n"
-        f"DRUG: {drug_name}\n\n"
-        f"TECHNICAL TEXT:\n{raw_text}\n\n"
-        f"Write 2 to 3 short sentences listing the most common side effects a patient "
-        f"should know about. Use everyday words. Do not mention animal studies, LD50 "
-        f"values, dosages in mg/kg, or overdose treatment. Do not start with phrases "
-        f"like 'This drug' or 'The drug'. Just describe the side effects naturally.\n\n"
-        f"PATIENT SUMMARY:"
+    if not raw:
+        return ""
+    text = html.unescape(raw)
+    text = _CITATION_RE.sub("", text)
+    text = _TAG_RE.sub("", text)
+    text = _DOSE_RE.sub("a large amount", text)
+    text = _WS_RE.sub(" ", text).strip()
+    return text
+
+
+def _summarize_side_effects(drug_name, raw_text):
+    """Ask the local LLM to compress DrugBank toxicity prose into 2-3 sentences.
+
+    Permissive prompt — summarizes whatever safety information is present
+    (common effects OR overdose risk) rather than forbidding categories that
+    might be the entire content of the source field. 
+    
+    Retries once with a simpler prompt before giving up
+    """
+    cleaned = _clean_raw_text(raw_text)
+    if not cleaned:
+        return ""
+
+    primary_prompt = (
+        f"You are writing a brief patient-safety note about {drug_name}.\n\n"
+        f"Read this reference text from a drug database and write 2 to 3 short, "
+        f"plain-language sentences for a patient. Cover what they should watch "
+        f"for or be aware of when taking this medicine. Use everyday words. If "
+        f"the text only describes the risk of taking too much, write about that "
+        f"risk in patient-friendly terms, but without specific dosing numbers. "
+        f"Skip animal-study language. Start directly with the safety information.\n\n"
+        f"REFERENCE TEXT:\n{cleaned}\n\n"
+        f"PATIENT NOTE:"
     )
+
+    fallback_prompt = (
+        f"In 2 to 3 short, plain-language sentences, summarize for a patient "
+        f"what this text says about the safety of {drug_name}:\n\n"
+        f"{cleaned}\n\n"
+        f"Summary:"
+    )
+
     client = ollama.Client(timeout=SUMMARY_TIMEOUT_S)
-    response = client.chat(
-        model=SUMMARY_MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        options={"num_predict": 180, "temperature": 0.2},
-    )
-    return response["message"]["content"].strip()
+    for attempt, (label, prompt, temp) in enumerate(
+        [("primary", primary_prompt, 0.3), ("fallback", fallback_prompt, 0.5)], 1
+    ):
+        response = client.chat(
+            model=SUMMARY_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            options={"num_predict": 300, "temperature": temp},
+        )
+        result = (response["message"]["content"] or "").strip()
+        if result:
+            return result
+        _logger.info(
+            "summarize: %s attempt empty for %s, trying next", label, drug_name
+        )
+
+    return ""
 
 
 def _summarize_and_cache(name_lower):
     """Background worker: summarize one drug's side effects and write to the cache.
 
-    Resolves aliases before lookup so e.g. "aspirin" finds "acetylsalicylic acid"
+    Resolves aliases before lookup so e.g. "aspirin" finds "acetylsalicylic acid".
     No-ops if the cache is already populated or there is no raw text to summarize.
-    Failures are logged and swallowed so the next call retries.
+    All failures are logged so silent worker crashes show up in uvicorn stdout
     """
-    db = get_db()
     try:
-        canonical = _resolve_to_profile_name(db, name_lower)
-        row = db.execute(
-            "SELECT side_effects, side_effects_summary "
-            "FROM drug_profiles WHERE name = ?",
-            (canonical,),
-        ).fetchone()
-        if not row:
-            return
-        raw_side, summary = row
-        if summary or not raw_side:
-            return
+        db = get_db()
         try:
-            new_summary = _summarize_side_effects(canonical, raw_side)
-        except Exception as e:
-            _logger.warning(
-                "Side effects summarization failed for %s: %s", canonical, e
+            canonical = _resolve_to_profile_name(db, name_lower)
+            _logger.info(
+                "summarize: %s -> canonical=%s", name_lower, canonical
             )
-            return
-        if new_summary:
+
+            row = db.execute(
+                "SELECT side_effects, side_effects_summary "
+                "FROM drug_profiles WHERE name = ?",
+                (canonical,),
+            ).fetchone()
+            if not row:
+                _logger.info("summarize: no profile row for %s", canonical)
+                return
+
+            raw_side, summary = row
+            # `is not None` distinguishes "never tried" (NULL) from
+            # "tried and got nothing useful"
+            if summary is not None:
+                _logger.info(
+                    "summarize: already attempted for %s", canonical
+                )
+                return
+            if not raw_side:
+                _logger.info("summarize: no raw text for %s", canonical)
+                return
+
+            try:
+                new_summary = _summarize_side_effects(canonical, raw_side)
+            except Exception as e:
+                _logger.warning(
+                    "summarize: LLM failed for %s: %s", canonical, e
+                )
+                return
+
+            if not new_summary:
+                # Store empty sentinel so future warm passes don't retry
+                # and so get_drug_profile knows not to fall back to raw LD50 text.
+                _logger.warning(
+                    "summarize: empty LLM response for %s; "
+                    "marking attempted to prevent fallback to raw text",
+                    canonical,
+                )
+                new_summary = ""
+
             db.execute(
                 "UPDATE drug_profiles SET side_effects_summary = ? "
                 "WHERE name = ?",
                 (new_summary, canonical),
             )
             db.commit()
-    finally:
-        db.close()
+            if new_summary:
+                _logger.info(
+                    "summarize: wrote %d chars for %s",
+                    len(new_summary),
+                    canonical,
+                )
+        finally:
+            db.close()
+    except Exception as e:
+        _logger.exception(
+            "summarize: worker crashed for %s: %s", name_lower, e
+        )
 
 
 def warm_drug_profiles(names):
@@ -180,12 +274,21 @@ def get_drug_profile(name):
         brand_names,
     ) = row
 
+    # summary semantics:
+    #   None  -> never attempted; raw_side is the best we have
+    #   ""    -> attempted, no useful summary; do not fall back to raw LD50 text
+    #   "..." -> use the cached summary
+    if summary is not None:
+        side_effects = summary
+    else:
+        side_effects = raw_side or ""
+
     return {
         "name": name_lower,
         "indication": indication or "",
         "description": description or "",
         "drug_class": drug_class or "",
-        "side_effects": summary or raw_side or "",
+        "side_effects": side_effects,
         "route": route or "",
         "brand_names": brand_names or "",
     }
