@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FaFilePdf, FaPlus, FaCamera } from "react-icons/fa";
+import { FaFilePdf, FaPlus, FaCamera, FaSyncAlt } from "react-icons/fa";
 import { BsChatDots } from "react-icons/bs";
 import { useMedora } from "../context/MedoraContext.jsx";
 
@@ -67,25 +67,14 @@ export default function ResultsPage() {
   const [openBeers, setOpenBeers] = useState({});
   const [focusId, setFocusId] = useState(null);
   const [drugsCollapsed, setDrugsCollapsed] = useState(false);
+  const [lastAnalyzedKey, setLastAnalyzedKey] = useState(() =>
+    rowsToDrugKey(rows),
+  );
   const inputRefs = useRef({});
-  const lastAnalyzedKey = useRef(result ? rowsToDrugKey(rows) : "");
 
   useEffect(() => {
     if (!rows.length && !result) navigate("/", { replace: true });
   }, [rows.length, result, navigate]);
-
-  useEffect(() => {
-    const drugs = rows
-      .map((r) => (r.normalized || "").trim())
-      .filter(Boolean);
-    const key = rowsToDrugKey(rows);
-    if (key === lastAnalyzedKey.current) return;
-    const t = setTimeout(() => {
-      lastAnalyzedKey.current = key;
-      analyzeDrugs(drugs);
-    }, 400);
-    return () => clearTimeout(t);
-  }, [rows, analyzeDrugs]);
 
   useEffect(() => {
     if (focusId && inputRefs.current[focusId]) {
@@ -126,7 +115,20 @@ export default function ResultsPage() {
     navigate("/camera");
   };
 
+  const currentDrugKey = rowsToDrugKey(rows);
+  const isDirty = currentDrugKey !== lastAnalyzedKey;
+
+  const handleAnalyze = () => {
+    clearError();
+    const drugs = rows
+      .map((r) => (r.normalized || "").trim())
+      .filter(Boolean);
+    setLastAnalyzedKey(currentDrugKey);
+    analyzeDrugs(drugs);
+  };
+
   const drugCount = rows.length;
+  const canAnalyze = hasDrugs && !loading && isDirty;
 
   return (
     <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden bg-[#f4f4f5] print:bg-white print:overflow-visible">
@@ -230,14 +232,14 @@ export default function ResultsPage() {
               ))}
             </ul>
 
-            <div className="mt-2.5 grid grid-cols-2 gap-2 print:hidden">
+            <div className="mt-2.5 grid grid-cols-3 gap-2 print:hidden">
               <button
                 type="button"
                 className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-primary/40 bg-white py-3 text-[0.9rem] font-semibold text-primary"
                 onClick={handleAddManual}
               >
                 <FaPlus className="h-3 w-3" />
-                Add manually
+                Add
               </button>
               <button
                 type="button"
@@ -245,7 +247,20 @@ export default function ResultsPage() {
                 onClick={handleScanMore}
               >
                 <FaCamera className="h-3.5 w-3.5" />
-                Scan label
+                Scan
+              </button>
+              <button
+                type="button"
+                className={`flex w-full items-center justify-center gap-1.5 rounded-2xl border-2 border-solid py-3 text-[0.9rem] font-semibold ${
+                  canAnalyze
+                    ? "cursor-pointer border-primary bg-primary text-white"
+                    : "cursor-not-allowed border-gray-300 bg-white text-gray-400"
+                }`}
+                onClick={handleAnalyze}
+                disabled={!canAnalyze}
+              >
+                <FaSyncAlt className="h-3 w-3" />
+                Analyze
               </button>
             </div>
           </section>

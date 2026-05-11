@@ -14,7 +14,7 @@ DB_FILE = os.environ.get("MEDORA_DB", "medora.db")
 TEXT_MODEL = os.environ.get("MEDORA_TEXT_MODEL", "medora-gemma4-text")
 VISION_MODEL = os.environ.get("MEDORA_VISION_MODEL", "gemma4:e2b")
 SUMMARY_MODEL = os.environ.get("MEDORA_SUMMARY_MODEL", "gemma4:e2b")
-SUMMARY_TIMEOUT_S = float(os.environ.get("MEDORA_SUMMARY_TIMEOUT", "20"))
+SUMMARY_TIMEOUT_S = float(os.environ.get("MEDORA_SUMMARY_TIMEOUT", "30"))
 
 _logger = logging.getLogger(__name__)
 _summary_executor = ThreadPoolExecutor(
@@ -304,9 +304,9 @@ def extract_drugs_from_image(image_path):
 
 
 def _build_medication_reference(drug_names):
-    """Format per-drug profile facts as a reference block for system-prompt injection.
+    """Format drug profile facts as source of truth for system prompt injection
 
-    Returns an empty string if no usable profiles exist (so callers can skip the block).
+    Returns an empty string if no usable profiles exist, callers can skip the block
     """
     if not drug_names:
         return ""
