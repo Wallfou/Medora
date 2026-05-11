@@ -328,6 +328,7 @@ def create_db():
     db = sqlite3.connect(DB_FILE)
 
     db.executescript("""
+        DROP TABLE IF EXISTS drug_aliases;
         DROP TABLE IF EXISTS interactions;
         DROP TABLE IF EXISTS beers_criteria;
         DROP TABLE IF EXISTS drug_profiles;
@@ -369,6 +370,11 @@ def create_db():
             side_effects_summary TEXT,
             route TEXT,
             FOREIGN KEY (name) REFERENCES drugs(name)
+        );
+
+        CREATE TABLE drug_aliases (
+            alias TEXT PRIMARY KEY,
+            canonical TEXT NOT NULL
         );
     """)
     return db
@@ -549,6 +555,7 @@ def load_drugbank_data(db, xml_path=None):
     drug_count = 0
     interaction_count = 0
     profile_count = 0
+    alias_count = 0
     skipped = 0
 
     context = ET.iterparse(path, events=("end",))
@@ -614,6 +621,40 @@ def load_drugbank_data(db, xml_path=None):
                 ),
             )
             profile_count += 1
+
+        # Synonyms → aliases
+        synonyms_el = elem.find(f"{ns}synonyms")
+        if synonyms_el is not None:
+            for syn in synonyms_el.findall(f"{ns}synonym"):
+                if not syn.text:
+                    continue
+                alias = syn.text.strip().lower()
+                # Skip self, empty, very short (abbreviations), or very long (IUPAC names)
+                if alias and alias != name_lower and 4 <= len(alias) <= 100:
+                    cur = db.execute(
+                        "INSERT OR IGNORE INTO drug_aliases (alias, canonical) "
+                        "VALUES (?, ?)",
+                        (alias, name_lower),
+                    )
+                    alias_count += cur.rowcount
+
+        # Brand names → aliases (unified lookup path alongside drugs.brand_names)
+        brands_raw = profile.get("brand_names") or ""
+        if brands_raw:
+            try:
+                for brand in json.loads(brands_raw):
+                    if not brand:
+                        continue
+                    alias = brand.strip().lower()
+                    if alias and alias != name_lower and len(alias) >= 3:
+                        cur = db.execute(
+                            "INSERT OR IGNORE INTO drug_aliases (alias, canonical) "
+                            "VALUES (?, ?)",
+                            (alias, name_lower),
+                        )
+                        alias_count += cur.rowcount
+            except (json.JSONDecodeError, TypeError):
+                pass
 
         ddi_el = elem.find(f"{ns}drug-interactions")
         if ddi_el is not None:
@@ -683,7 +724,8 @@ def load_drugbank_data(db, xml_path=None):
             print(
                 f"    Processed {drug_count} drugs, "
                 f"{interaction_count} new interactions, "
-                f"{profile_count} profiles..."
+                f"{profile_count} profiles, "
+                f"{alias_count} aliases..."
             )
 
         elem.clear()
@@ -694,6 +736,7 @@ def load_drugbank_data(db, xml_path=None):
         "SELECT COUNT(*) FROM interactions WHERE source = 'drugbank'"
     ).fetchone()[0]
     profile_total = db.execute("SELECT COUNT(*) FROM drug_profiles").fetchone()[0]
+    alias_total = db.execute("SELECT COUNT(*) FROM drug_aliases").fetchone()[0]
     print(
         f"\n    Drugs processed: {drug_count}\n"
         f"    New DrugBank interaction rows attempted: {interaction_count}\n"
@@ -701,6 +744,7 @@ def load_drugbank_data(db, xml_path=None):
         f"    Total interactions now: {after} "
         f"({drugbank_rows} from DrugBank)\n"
         f"    Drug profiles loaded: {profile_total}\n"
+        f"    Drug aliases loaded: {alias_total}\n"
     )
 
 
@@ -715,12 +759,14 @@ def print_summary(db):
         "SELECT COUNT(*) FROM interactions WHERE source = 'drugbank'"
     ).fetchone()[0]
     profiles = db.execute("SELECT COUNT(*) FROM drug_profiles").fetchone()[0]
+    aliases = db.execute("SELECT COUNT(*) FROM drug_aliases").fetchone()[0]
 
     print("=" * 25)
     print("  Medora Database Summary")
     print("=" * 25)
     print(f"  Drugs:              {drugs}")
     print(f"  Drug profiles:      {profiles}")
+    print(f"  Drug aliases:       {aliases}")
     print(f"  Interactions:       {interactions} ({major} major)")
     print(f"    DrugBank-sourced: {drugbank_ix}")
     print(f"  Beers Criteria:     {beers} entries")

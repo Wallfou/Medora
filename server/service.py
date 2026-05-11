@@ -26,21 +26,42 @@ def get_db():
     return sqlite3.connect(DB_FILE)
 
 
-def _ensure_profile_schema():
-    """One time migration: add summary cache column if the DB predates it"""
+def _ensure_schema():
+    """migrations for DBs built before recent schema additions"""
     db = get_db()
     try:
+        try:
+            db.execute(
+                "ALTER TABLE drug_profiles ADD COLUMN side_effects_summary TEXT"
+            )
+        except sqlite3.OperationalError:
+            pass
         db.execute(
-            "ALTER TABLE drug_profiles ADD COLUMN side_effects_summary TEXT"
+            """CREATE TABLE IF NOT EXISTS drug_aliases (
+                   alias     TEXT PRIMARY KEY,
+                   canonical TEXT NOT NULL
+               )"""
         )
         db.commit()
-    except sqlite3.OperationalError:
-        pass
     finally:
         db.close()
 
 
-_ensure_profile_schema()
+_ensure_schema()
+
+
+def _resolve_to_profile_name(db, name_lower):
+    """Map a drug name to its canonical drug_profiles name via the alias table
+
+    If name_lower is already the canonical name, or has no alias entry,
+    it is returned unchanged and the caller's profile lookup will succeed
+    or miss
+    """
+    row = db.execute(
+        "SELECT canonical FROM drug_aliases WHERE alias = ?",
+        (name_lower,),
+    ).fetchone()
+    return row[0] if row else name_lower
 
 
 def _summarize_side_effects(drug_name, raw_text):
@@ -70,34 +91,35 @@ def _summarize_side_effects(drug_name, raw_text):
 def _summarize_and_cache(name_lower):
     """Background worker: summarize one drug's side effects and write to the cache.
 
+    Resolves aliases before lookup so e.g. "aspirin" finds "acetylsalicylic acid"
     No-ops if the cache is already populated or there is no raw text to summarize.
     Failures are logged and swallowed so the next call retries.
     """
     db = get_db()
     try:
+        canonical = _resolve_to_profile_name(db, name_lower)
         row = db.execute(
             "SELECT side_effects, side_effects_summary "
             "FROM drug_profiles WHERE name = ?",
-            (name_lower,),
+            (canonical,),
         ).fetchone()
         if not row:
             return
         raw_side, summary = row
         if summary or not raw_side:
             return
-        
         try:
-            new_summary = _summarize_side_effects(name_lower, raw_side)
+            new_summary = _summarize_side_effects(canonical, raw_side)
         except Exception as e:
             _logger.warning(
-                "Side effects summarization failed for %s: %s", name_lower, e
+                "Side effects summarization failed for %s: %s", canonical, e
             )
             return
         if new_summary:
             db.execute(
                 "UPDATE drug_profiles SET side_effects_summary = ? "
                 "WHERE name = ?",
-                (new_summary, name_lower),
+                (new_summary, canonical),
             )
             db.commit()
     finally:
@@ -133,6 +155,7 @@ def get_drug_profile(name):
         return None
 
     db = get_db()
+    canonical = _resolve_to_profile_name(db, name_lower)
     row = db.execute(
         """SELECT p.indication, p.description_short, p.drug_class,
                   p.side_effects, p.side_effects_summary, p.route,
@@ -140,7 +163,7 @@ def get_drug_profile(name):
            FROM drug_profiles p
            LEFT JOIN drugs d ON d.name = p.name
            WHERE p.name = ?""",
-        (name_lower,),
+        (canonical,),
     ).fetchone()
     db.close()
 
