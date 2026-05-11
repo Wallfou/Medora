@@ -134,9 +134,12 @@ def get_drug_profile(name):
 
     db = get_db()
     row = db.execute(
-        """SELECT indication, description_short, drug_class,
-                  side_effects, side_effects_summary, route
-           FROM drug_profiles WHERE name = ?""",
+        """SELECT p.indication, p.description_short, p.drug_class,
+                  p.side_effects, p.side_effects_summary, p.route,
+                  d.brand_names
+           FROM drug_profiles p
+           LEFT JOIN drugs d ON d.name = p.name
+           WHERE p.name = ?""",
         (name_lower,),
     ).fetchone()
     db.close()
@@ -144,7 +147,15 @@ def get_drug_profile(name):
     if not row:
         return None
 
-    indication, description, drug_class, raw_side, summary, route = row
+    (
+        indication,
+        description,
+        drug_class,
+        raw_side,
+        summary,
+        route,
+        brand_names,
+    ) = row
 
     return {
         "name": name_lower,
@@ -153,6 +164,7 @@ def get_drug_profile(name):
         "drug_class": drug_class or "",
         "side_effects": summary or raw_side or "",
         "route": route or "",
+        "brand_names": brand_names or "",
     }
 
 
@@ -291,6 +303,54 @@ def extract_drugs_from_image(image_path):
             return [{"drug_name": text.strip(), "dosage": "unknown"}]
 
 
+def _build_medication_reference(drug_names):
+    """Format per-drug profile facts as a reference block for system-prompt injection.
+
+    Returns an empty string if no usable profiles exist (so callers can skip the block).
+    """
+    if not drug_names:
+        return ""
+
+    sections = []
+    for name in drug_names:
+        profile = get_drug_profile(name)
+        if not profile:
+            continue
+
+        brand_suffix = ""
+        brands_raw = profile.get("brand_names") or ""
+        if brands_raw:
+            try:
+                brands = json.loads(brands_raw)
+                if brands:
+                    brand_suffix = f" (also sold as {', '.join(brands[:3])})"
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        lines = [f"{name.upper()}{brand_suffix}"]
+        if profile.get("drug_class"):
+            lines.append(f"  Class: {profile['drug_class']}")
+        if profile.get("indication"):
+            lines.append(f"  Used for: {profile['indication']}")
+        if profile.get("side_effects"):
+            lines.append(f"  Common side effects: {profile['side_effects']}")
+
+        if len(lines) > 1:
+            sections.append("\n".join(lines))
+
+    if not sections:
+        return ""
+
+    return (
+        "MEDICATION REFERENCE\n"
+        "Use the facts below as your source of truth when answering about these "
+        "specific medications. Paraphrase naturally — do not quote verbatim or list "
+        "every field unless the patient asks for it. For drugs not listed here, use "
+        "your general training knowledge.\n\n"
+        + "\n\n".join(sections)
+    )
+
+
 def answer_question(question, drug_names, history):
     """follow up question chatbot, answer a patient's question with medication context"""
     meds_str = ", ".join(drug_names) if drug_names else "none listed"
@@ -303,6 +363,10 @@ def answer_question(question, drug_names, history):
         "Defer diagnosis and dosage decisions to doctors. "
         "Never repeat the same disclaimer twice in a row."
     )
+
+    reference = _build_medication_reference(drug_names)
+    if reference:
+        system_prompt = f"{system_prompt}\n\n{reference}"
 
     messages = [{"role": "system", "content": system_prompt}]
     for turn in history or []:
