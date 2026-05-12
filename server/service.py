@@ -69,9 +69,9 @@ _CITATION_RE = re.compile(r"\[[A-Za-z0-9 ,.\-]+\]")
 _TAG_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"\s+")
 _DOSE_RE = re.compile(
-    r"\b\d+(?:[.,]\d+)?\s*"
+    r"\b\d+(?:[.,]\d+)?(?:\s*-\s*\d+(?:[.,]\d+)?)?\s*"
     r"(?:mg|g|mcg|µg|ng|kg|ml|l|grams?|grains?|tablets?|capsules?)"
-    r"(?:/kg|/day|/hour|/min|/m2)?\b",
+    r"(?:/(?:kg|day|hour|hr|min|m2|wk|week|d))*\b",
     re.IGNORECASE,
 )
 
@@ -79,11 +79,11 @@ _DOSE_RE = re.compile(
 def _clean_raw_text(raw):
     """Normalize DrugBank text for small-model consumption.
 
-    Strips citation markers, HTML tags/entities, and collapses whitespace.
-    Also neutralizes specific dose values like "99 mg/kg" -- Gemma's safety
-    alignment cuts off mid-sentence when about to emit dose thresholds, so
-    the model literally refuses to finish summarizing if the input primes
-    it with one.
+    1. Strip citation markers, HTML tags/entities.
+    2. Replace specific dose values like "1-2 mg/kg/day" with a neutral phrase
+       -- Gemma's safety alignment refuses to finish summarizing if primed
+       with a dose threshold.
+    3. Collapse whitespace.
     """
     if not raw:
         return ""

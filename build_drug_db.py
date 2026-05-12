@@ -489,7 +489,7 @@ def _extract_profile(elem, ns):
 
     indication = _truncate_text(text_of("indication"), 400)
     description_short = _truncate_text(text_of("description"), 400)
-    side_effects = _truncate_text(text_of("toxicity"), 500)
+    side_effects = text_of("toxicity")
 
     cats_el = elem.find(f"{ns}categories")
     cat_names = []
