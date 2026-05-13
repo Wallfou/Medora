@@ -36,3 +36,27 @@
     font: inherit;
   }
 }
+
+@media print {
+  body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  body,
+  #root,
+  #root > div,
+  #root > div > div,
+  #root > div > div > div {
+    display: block !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    max-width: none !important;
+    width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #fff !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    overflow: visible !important;
+  }
+}

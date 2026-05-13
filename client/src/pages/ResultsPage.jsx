@@ -474,7 +474,7 @@ export default function ResultsPage() {
         <button
           type="button"
           className="mb-2.5 inline-flex w-full max-w-full cursor-pointer items-center justify-center gap-2.5 rounded-full bg-primary px-5 py-4 text-[1.12rem] font-bold text-white shadow-[0_6px_20px_rgba(45,122,94,0.3)]"
-          onClick={() => window.print()}
+          onClick={() => navigate("/report")}
         >
           <FaFilePdf className="text-white" size={22} />
           Get Doctor Report
