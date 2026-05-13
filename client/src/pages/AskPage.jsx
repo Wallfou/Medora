@@ -5,17 +5,8 @@ import ReactMarkdown from "react-markdown";
 import { useMedora } from "../context/MedoraContext.jsx";
 import { apiJson } from "../lib/api.js";
 
-function buildGreeting(meds) {
-  if (!meds.length) {
-    return "Hi! What would you like to know about your medications?";
-  }
-  const list =
-    meds.length === 1
-      ? meds[0]
-      : meds.length === 2
-        ? `${meds[0]} and ${meds[1]}`
-        : `${meds.slice(0, -1).join(", ")}, and ${meds[meds.length - 1]}`;
-  return `Hi! I know you're taking ${list}. What would you like to know about your medications?`;
+function buildOpener() {
+  return "Ask anything about your medications.";
 }
 
 export default function AskPage() {
@@ -35,10 +26,8 @@ export default function AskPage() {
     [rows]
   );
 
-  const medNames = useMemo(() => meds.map((m) => m.name), [meds]);
-
   const [messages, setMessages] = useState(() => [
-    { role: "assistant", content: buildGreeting(medNames) },
+    { role: "assistant", content: buildOpener() },
   ]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -93,26 +82,26 @@ export default function AskPage() {
   };
 
   return (
-    <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden bg-[#f4f4f5]">
-      <div className="flex shrink-0 items-center gap-3 border-b border-gray-200/80 bg-white px-4 py-3">
+    <div className="flex min-h-screen w-full flex-1 flex-col overflow-hidden bg-bg">
+      <header className="flex shrink-0 items-center gap-3 border-b border-divider bg-bg px-4 py-3">
         <button
           type="button"
           onClick={() => navigate(-1)}
-          className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border-none bg-transparent text-text"
+          className="inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border-none bg-transparent text-text hover:bg-divider"
           aria-label="Back"
         >
           <FaArrowLeft size={18} />
         </button>
-        <h1 className="m-0 text-[1.25rem] font-bold tracking-tight text-text">
+        <h1 className="m-0 text-[1.35rem] font-bold tracking-tight text-text">
           Ask Medora
         </h1>
-      </div>
+      </header>
 
       <div
         ref={scrollRef}
-        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-4"
+        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-5 py-5"
       >
-        <ul className="m-0 flex list-none flex-col gap-3 p-0">
+        <ul className="m-0 flex list-none flex-col gap-4 p-0">
           {messages.map((m, i) => {
             const isUser = m.role === "user";
             const text = (m.content || "").trim();
@@ -123,10 +112,10 @@ export default function AskPage() {
                 className={`flex ${isUser ? "justify-end" : "justify-start"}`}
               >
                 <div
-                  className={`max-w-[85%] min-w-0 break-words rounded-2xl px-4 py-3 text-[1rem] leading-snug shadow-[0_1px_2px_rgba(0,0,0,0.06)] ${
+                  className={`max-w-[85%] min-w-0 break-words rounded-2xl px-4 py-3 text-[1.05rem] leading-snug ${
                     isUser
-                      ? "rounded-br-sm bg-primary text-white"
-                      : `rounded-bl-sm bg-white ${text ? "text-text" : "text-muted italic"}`
+                      ? "rounded-br-md bg-primary text-white"
+                      : `rounded-bl-md bg-surface ring-1 ring-divider ${text ? "text-text" : "text-muted italic"}`
                   }`}
                 >
                   {isUser ? (
@@ -136,9 +125,9 @@ export default function AskPage() {
                       components={{
                         p: ({ children }) => <p className="m-0 mb-2 last:mb-0">{children}</p>,
                         strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-                        ul: ({ children }) => <ul className="my-1 ml-4 list-disc">{children}</ul>,
-                        ol: ({ children }) => <ol className="my-1 ml-4 list-decimal">{children}</ol>,
-                        li: ({ children }) => <li className="mb-0.5">{children}</li>,
+                        ul: ({ children }) => <ul className="my-1 ml-5 list-disc">{children}</ul>,
+                        ol: ({ children }) => <ol className="my-1 ml-5 list-decimal">{children}</ol>,
+                        li: ({ children }) => <li className="mb-1">{children}</li>,
                       }}
                     >
                       {display}
@@ -150,21 +139,21 @@ export default function AskPage() {
           })}
           {sending && (
             <li className="flex justify-start">
-              <div className="inline-flex items-center gap-2 rounded-2xl rounded-bl-sm bg-white px-4 py-3 text-[0.95rem] text-muted shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+              <div className="inline-flex items-center gap-2 rounded-2xl rounded-bl-md bg-surface px-4 py-3 text-[1rem] text-muted ring-1 ring-divider">
                 <span className="h-3 w-3 animate-spin rounded-full border-[2px] border-primary/30 border-t-primary" />
-                Medora is thinking…
+                Thinking…
               </div>
             </li>
           )}
         </ul>
         {error && (
-          <div className="mt-3 rounded-[10px] bg-red-50 px-3.5 py-2.5 text-[0.85rem] text-red-700">
+          <div className="mt-4 rounded-2xl bg-alert-bg px-4 py-3 text-[1rem] text-alert ring-1 ring-alert/15">
             {error}
           </div>
         )}
       </div>
 
-      <div className="shrink-0 border-t border-gray-200/80 bg-white px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]">
+      <div className="shrink-0 border-t border-divider bg-bg px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]">
         <div className="flex items-center gap-2">
           <input
             ref={inputRef}
@@ -173,17 +162,17 @@ export default function AskPage() {
             onKeyDown={onKeyDown}
             disabled={sending}
             placeholder="Type your question…"
-            className="h-14 min-w-0 flex-1 rounded-full border border-gray-200 bg-[#f4f4f5] px-5 text-[1.05rem] text-text placeholder:text-muted-2 focus:border-primary focus:outline-none disabled:opacity-60"
+            className="h-14 min-w-0 flex-1 rounded-2xl bg-surface px-5 text-[1.1rem] text-text ring-1 ring-divider placeholder:text-muted-2 focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-60"
             autoComplete="off"
           />
           <button
             type="button"
             onClick={send}
             disabled={!input.trim() || sending}
-            className="flex h-14 w-14 shrink-0 cursor-pointer items-center justify-center rounded-full border-none bg-primary text-white shadow-[0_4px_14px_rgba(45,122,94,0.35)] disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex h-14 w-14 shrink-0 cursor-pointer items-center justify-center rounded-2xl border-none bg-primary text-white disabled:cursor-not-allowed disabled:opacity-40"
             aria-label="Send"
           >
-            <FaPaperPlane size={20} />
+            <FaPaperPlane size={18} />
           </button>
         </div>
       </div>

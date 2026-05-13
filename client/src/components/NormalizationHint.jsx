@@ -7,22 +7,20 @@ export default function NormalizationHint({ row, onPick }) {
     status === "ambiguous"
       ? "Did you mean…"
       : candidates.length
-      ? "Not a confident match — closest options:"
-      : "We couldn't find this in our database.";
+      ? "We couldn't find an exact match. Closest options:"
+      : "We couldn't find this in our records.";
 
   return (
-    <div className="mt-2 rounded-lg bg-amber-50 px-2.5 py-2">
-      <p className="m-0 text-[0.75rem] font-semibold text-amber-800">
-        {heading}
-      </p>
+    <div className="mt-3 rounded-xl bg-warn-bg px-3.5 py-3 ring-1 ring-warn/15">
+      <p className="m-0 text-[0.95rem] font-semibold text-warn">{heading}</p>
       {candidates.length > 0 && (
-        <div className="mt-1.5 flex flex-wrap gap-1.5">
+        <div className="mt-2 flex flex-wrap gap-2">
           {candidates.map((c) => (
             <button
               key={c.name}
               type="button"
               onClick={() => onPick(c.name)}
-              className="cursor-pointer rounded-full border border-amber-300 bg-white px-2.5 py-1 text-[0.8rem] font-medium text-amber-900 hover:bg-amber-100"
+              className="cursor-pointer rounded-full bg-white px-3.5 py-1.5 text-[0.95rem] font-medium text-text ring-1 ring-divider hover:bg-bg"
               title={`${c.score}% match`}
             >
               {c.name}
@@ -31,7 +29,7 @@ export default function NormalizationHint({ row, onPick }) {
         </div>
       )}
       {status === "unresolved" && (
-        <p className="m-0 mt-1.5 text-[0.72rem] text-amber-700">
+        <p className="m-0 mt-2 text-[0.9rem] leading-snug text-muted">
           Check the spelling, or pick a suggestion above if it looks right.
         </p>
       )}

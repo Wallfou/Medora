@@ -56,57 +56,57 @@ export default function ReportPage() {
   if (!result) return null;
 
   return (
-    <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden bg-white print:bg-white">
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-gray-200/80 bg-white px-4 py-3 print:hidden">
+    <div className="flex min-h-screen w-full flex-1 flex-col bg-bg print:bg-white">
+      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-divider bg-bg px-4 py-3 print:hidden">
         <button
           type="button"
           onClick={() => navigate("/results")}
-          className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border-none bg-transparent text-text"
+          className="inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border-none bg-transparent text-text hover:bg-divider"
           aria-label="Back to dashboard"
         >
           <FaArrowLeft size={18} />
         </button>
-        <h1 className="m-0 text-[1.1rem] font-bold tracking-tight text-text">
-          Doctor Report
+        <h1 className="m-0 text-[1.15rem] font-bold tracking-tight text-text">
+          Doctor report
         </h1>
         <button
           type="button"
           onClick={() => window.print()}
-          className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border-none bg-primary text-white"
+          className="inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border-none bg-primary text-white hover:bg-primary-dark"
           aria-label="Print or save as PDF"
         >
-          <FaPrint size={16} />
+          <FaPrint size={15} />
         </button>
-      </div>
+      </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6 print:overflow-visible print:px-8 print:py-6">
-        <header className="mb-6 border-b border-gray-300 pb-3">
-          <h2 className="m-0 text-[1.5rem] font-bold tracking-tight text-text">
-            Medication Review Report
+      <div className="min-h-0 flex-1 overflow-y-auto bg-surface px-6 py-8 print:overflow-visible print:bg-white print:px-10 print:py-8">
+        <header className="mb-8 border-b border-divider pb-4">
+          <h2 className="m-0 text-[1.875rem] font-bold tracking-tight text-text">
+            Medication review
           </h2>
-          <p className="m-0 mt-1 text-[0.85rem] text-muted">
+          <p className="m-0 mt-1.5 text-[0.95rem] text-muted">
             Prepared {reportDate} · For discussion with your doctor
           </p>
         </header>
 
-        <section className="mb-6">
-          <h3 className="m-0 mb-2 text-[1rem] font-bold uppercase tracking-[0.06em] text-text">
+        <section className="mb-8">
+          <h3 className="m-0 mb-3 text-[1.2rem] font-semibold text-text">
             Medications
           </h3>
           {meds.length === 0 ? (
-            <p className="m-0 text-[0.95rem] text-muted">None listed.</p>
+            <p className="m-0 text-[1rem] text-muted">None listed.</p>
           ) : (
             <ul className="m-0 list-none p-0">
               {meds.map((m, i) => (
                 <li
                   key={`${m.name}-${i}`}
-                  className="flex items-baseline gap-3 border-b border-gray-100 py-1.5 last:border-b-0"
+                  className="flex items-baseline justify-between gap-4 border-b border-divider py-2.5 last:border-b-0"
                 >
-                  <span className="text-[0.98rem] font-semibold capitalize text-text">
+                  <span className="text-[1.05rem] font-medium capitalize text-text">
                     {m.name}
                   </span>
-                  <span className="text-[0.9rem] text-muted">
-                    {m.dosage || "dose not recorded"}
+                  <span className="text-[1rem] text-muted">
+                    {m.dosage || "—"}
                   </span>
                 </li>
               ))}
@@ -114,40 +114,42 @@ export default function ReportPage() {
           )}
         </section>
 
-        <section className="mb-6">
-          <h3 className="m-0 mb-2 text-[1rem] font-bold uppercase tracking-[0.06em] text-text">
-            Drug Interactions Found
+        <section className="mb-8">
+          <h3 className="m-0 mb-3 text-[1.2rem] font-semibold text-text">
+            Drug interactions
           </h3>
           {interactions.length === 0 ? (
-            <p className="m-0 text-[0.95rem] text-muted">
-              No drug-drug interactions identified in our database.
+            <p className="m-0 text-[1rem] text-muted">
+              No drug-drug interactions were identified.
             </p>
           ) : (
             <ul className="m-0 list-none p-0">
               {interactions.map((ix, i) => (
                 <li
                   key={`${ix.drug1}-${ix.drug2}-${i}`}
-                  className="border-b border-gray-100 py-2 last:border-b-0"
+                  className="border-b border-divider py-3 last:border-b-0"
                 >
-                  <p className="m-0 text-[0.98rem] font-semibold capitalize text-text">
-                    {ix.drug1} + {ix.drug2}
+                  <div className="flex items-baseline justify-between gap-3">
+                    <p className="m-0 text-[1.05rem] font-semibold capitalize text-text">
+                      {ix.drug1} + {ix.drug2}
+                    </p>
                     <span
-                      className={`ml-2 inline-block rounded px-1.5 py-0.5 align-middle text-[0.7rem] font-bold uppercase tracking-wide ${
+                      className={`shrink-0 text-[0.9rem] font-semibold ${
                         ix.severity === "major"
-                          ? "bg-red-100 text-red-800"
-                          : "bg-amber-100 text-amber-800"
+                          ? "text-alert"
+                          : "text-warn"
                       }`}
                     >
                       {severityLabel(ix.severity)}
                     </span>
-                  </p>
+                  </div>
                   {ix.description && (
-                    <p className="m-0 mt-1 text-[0.9rem] leading-snug text-muted">
+                    <p className="m-0 mt-1.5 text-[0.95rem] leading-snug text-muted">
                       {ix.description}
                     </p>
                   )}
                   {ix.management && (
-                    <p className="m-0 mt-1 text-[0.85rem] leading-snug text-muted">
+                    <p className="m-0 mt-1.5 text-[0.95rem] leading-snug text-muted">
                       <span className="font-semibold text-text">Guidance:</span>{" "}
                       {ix.management}
                     </p>
@@ -158,42 +160,42 @@ export default function ReportPage() {
           )}
         </section>
 
-        <section className="mb-6">
-          <h3 className="m-0 mb-2 text-[1rem] font-bold uppercase tracking-[0.06em] text-text">
-            Older-Adult Safety Concerns
+        <section className="mb-8">
+          <h3 className="m-0 mb-3 text-[1.2rem] font-semibold text-text">
+            Concerns for older adults
           </h3>
           {beers.length === 0 ? (
-            <p className="m-0 text-[0.95rem] text-muted">
-              No Beers Criteria concerns identified.
+            <p className="m-0 text-[1rem] text-muted">
+              No age-related concerns were identified.
             </p>
           ) : (
             <ul className="m-0 list-none p-0">
               {beers.map((b, i) => (
                 <li
                   key={`${b.drug}-${i}`}
-                  className="border-b border-gray-100 py-2 last:border-b-0"
+                  className="border-b border-divider py-3 last:border-b-0"
                 >
-                  <p className="m-0 text-[0.98rem] font-semibold capitalize text-text">
+                  <p className="m-0 text-[1.05rem] font-semibold capitalize text-text">
                     {b.drug}
                     {b.drug_class && (
-                      <span className="ml-2 text-[0.85rem] font-normal text-muted">
+                      <span className="ml-2 text-[0.9rem] font-normal text-muted">
                         ({b.drug_class})
                       </span>
                     )}
                   </p>
                   {b.recommendation && (
-                    <p className="m-0 mt-1 text-[0.9rem] leading-snug text-text">
+                    <p className="m-0 mt-1.5 text-[0.95rem] leading-snug text-text">
                       {b.recommendation}
                     </p>
                   )}
                   {b.rationale && (
-                    <p className="m-0 mt-1 text-[0.85rem] leading-snug text-muted">
+                    <p className="m-0 mt-1.5 text-[0.95rem] leading-snug text-muted">
                       <span className="font-semibold text-text">Why:</span>{" "}
                       {b.rationale}
                     </p>
                   )}
                   {b.alternatives && (
-                    <p className="m-0 mt-1 text-[0.85rem] leading-snug text-muted">
+                    <p className="m-0 mt-1.5 text-[0.95rem] leading-snug text-muted">
                       <span className="font-semibold text-text">
                         Alternatives:
                       </span>{" "}
@@ -206,28 +208,28 @@ export default function ReportPage() {
           )}
         </section>
 
-        <footer className="mt-8 border-t border-gray-200 pt-3 text-[0.78rem] leading-snug text-muted-2">
-          Medora is an educational tool, not medical advice. This report is a
+        <footer className="mt-10 border-t border-divider pt-3 text-[0.85rem] leading-snug text-muted-2">
+          Medora is educational and is not medical advice. This report is a
           starting point for a conversation with your doctor or pharmacist.
         </footer>
       </div>
 
-      <div className="shrink-0 border-t border-gray-200/80 bg-white px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] print:hidden">
-        <div className="flex gap-2">
+      <div className="shrink-0 border-t border-divider bg-bg px-5 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] print:hidden">
+        <div className="flex gap-2.5">
           <button
             type="button"
             onClick={() => navigate("/results")}
-            className="flex-1 cursor-pointer rounded-full border-2 border-primary bg-white px-4 py-3 text-[0.95rem] font-bold text-primary"
+            className="flex-1 cursor-pointer rounded-2xl bg-surface px-4 py-4 text-[1.05rem] font-semibold text-primary ring-1 ring-divider hover:bg-bg"
           >
-            Back to Dashboard
+            Back
           </button>
           <button
             type="button"
             onClick={() => window.print()}
-            className="inline-flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-full border-none bg-primary px-4 py-3 text-[0.95rem] font-bold text-white shadow-[0_4px_14px_rgba(45,122,94,0.3)]"
+            className="inline-flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-2xl border-none bg-primary px-4 py-4 text-[1.05rem] font-semibold text-white hover:bg-primary-dark"
           >
             <FaPrint size={14} />
-            Print / Save PDF
+            Print / PDF
           </button>
         </div>
       </div>
