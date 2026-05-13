@@ -684,18 +684,54 @@ def extract_drugs_from_image(image_path):
             return [{"drug_name": text.strip(), "dosage": "unknown"}]
 
 
-def _build_medication_reference(drug_names):
+def _coerce_meds(meds):
+    """Accept either a list of names or a list of {name, dosage} dicts.
+
+    Returns a list of (name, dosage) tuples with non-empty names, names
+    lowercased. Lets callers pass legacy string lists during migration.
+    """
+    out = []
+    for m in meds or []:
+        if isinstance(m, str):
+            name, dosage = m, ""
+        elif isinstance(m, dict):
+            name = m.get("name") or ""
+            dosage = m.get("dosage") or ""
+        else:
+            continue
+        name = name.strip().lower()
+        if name:
+            out.append((name, (dosage or "").strip()))
+    return out
+
+
+def _format_meds_inline(meds):
+    """Render a meds list as 'metformin (500 mg), aspirin (81 mg daily)'."""
+    parts = []
+    for name, dosage in meds:
+        parts.append(f"{name} ({dosage})" if dosage else name)
+    return ", ".join(parts)
+
+
+def _build_medication_reference(meds):
     """Format drug profile facts as source of truth for system prompt injection
+
+    meds: list of (name, dosage) tuples. Dosage is injected verbatim as the
+    patient typed it -- chatbot uses it to answer "am I taking too much?" style
+    questions without us trying to parse free-form dosage strings.
 
     Returns an empty string if no usable profiles exist, callers can skip the block
     """
-    if not drug_names:
+    if not meds:
         return ""
 
     sections = []
-    for name in drug_names:
+    for name, dosage in meds:
         profile = get_drug_profile(name)
         if not profile:
+            # No DB profile, but we still want the dose visible to the chat.
+            if dosage:
+                sections.append(f"{name.upper()}\n  Patient's dose: {dosage}")
             continue
 
         brand_suffix = ""
@@ -709,6 +745,8 @@ def _build_medication_reference(drug_names):
                 pass
 
         lines = [f"{name.upper()}{brand_suffix}"]
+        if dosage:
+            lines.append(f"  Patient's dose: {dosage}")
         if profile.get("drug_class"):
             lines.append(f"  Class: {profile['drug_class']}")
         if profile.get("indication"):
@@ -725,16 +763,23 @@ def _build_medication_reference(drug_names):
     return (
         "MEDICATION REFERENCE\n"
         "Use the facts below as your source of truth when answering about these "
-        "specific medications. Paraphrase naturally — do not quote verbatim or list "
-        "every field unless the patient asks for it. For drugs not listed here, use "
-        "your general training knowledge.\n\n"
+        "specific medications. The 'Patient's dose' line is what the patient "
+        "actually takes -- reference it when the question is dose-related. "
+        "Paraphrase naturally; do not quote verbatim or list every field unless "
+        "the patient asks for it. For drugs not listed here, use your general "
+        "training knowledge.\n\n"
         + "\n\n".join(sections)
     )
 
 
-def answer_question(question, drug_names, history):
-    """follow up question chatbot, answer a patient's question with medication context"""
-    meds_str = ", ".join(drug_names) if drug_names else "none listed"
+def answer_question(question, medications, history):
+    """follow up question chatbot, answer a patient's question with medication context
+
+    medications: list of name strings OR {name, dosage} dicts. Dose is woven
+    into both the inline list and the reference block.
+    """
+    meds = _coerce_meds(medications)
+    meds_str = _format_meds_inline(meds) if meds else "none listed"
 
     system_prompt = (
         "You are Medora, a warm and knowledgeable medication safety assistant. "
@@ -745,7 +790,7 @@ def answer_question(question, drug_names, history):
         "Never repeat the same disclaimer twice in a row."
     )
 
-    reference = _build_medication_reference(drug_names)
+    reference = _build_medication_reference(meds)
     if reference:
         system_prompt = f"{system_prompt}\n\n{reference}"
 
@@ -765,8 +810,12 @@ def answer_question(question, drug_names, history):
     return response["message"]["content"]
 
 
-def generate_explanation(drug_names, interactions, beers_flags):
-    """Ask Gemma 4 for a plain-language report."""
+def generate_explanation(medications, interactions, beers_flags):
+    """Ask Gemma 4 for a plain-language report.
+
+    medications: list of name strings OR {name, dosage} dicts.
+    """
+    meds = _coerce_meds(medications)
 
     interaction_text = ""
     if interactions:
@@ -792,7 +841,7 @@ def generate_explanation(drug_names, interactions, beers_flags):
     prompt = f"""You are Medora, a medication safety assistant speaking to an elderly
 patient or their caregiver.
 
-They are taking: {", ".join(drug_names)}
+They are taking: {_format_meds_inline(meds)}
 
 DATA FROM OUR CHECKS (for your eyes only; do not dump this back verbatim):
 DRUG-DRUG:

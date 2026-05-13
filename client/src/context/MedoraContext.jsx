@@ -198,8 +198,11 @@ export function MedoraProvider({ children }) {
     if (needsConfirmation) return { ok: false };
 
     const drugs = activeRows
-      .map((r) => (idToUpdate.get(r.id)?.normalized || r.normalized).trim())
-      .filter(Boolean);
+      .map((r) => ({
+        name: (idToUpdate.get(r.id)?.normalized || r.normalized).trim(),
+        dosage: (r.dosage || "").trim(),
+      }))
+      .filter((d) => d.name);
     return { ok: true, drugs };
   }, []);
 

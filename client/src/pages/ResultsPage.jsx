@@ -41,18 +41,32 @@ function LearnMoreButton({ isOpen, onClick, id }) {
   );
 }
 
+// shape: "name@dosage|name@dosage|..." sorted by name. Including dosage
+// means edits to the dose alone mark the analysis dirty, so the patient gets prompted to re analyze
 function rowsToDrugKey(rows) {
   return rows
-    .map((r) => (r.normalized || "").trim().toLowerCase())
+    .map((r) => {
+      const name = (r.normalized || "").trim().toLowerCase();
+      if (!name) return null;
+      const dose = (r.dosage || "").trim().toLowerCase();
+      return `${name}@${dose}`;
+    })
     .filter(Boolean)
     .slice()
     .sort()
     .join("|");
 }
 
-function namesToKey(names) {
-  return (names || [])
-    .map((n) => (n || "").trim().toLowerCase())
+function medsToKey(meds) {
+  return (meds || [])
+    .map((m) => {
+      const name =
+        (typeof m === "string" ? m : m?.name || "").trim().toLowerCase();
+      if (!name) return null;
+      const dose =
+        (typeof m === "string" ? "" : m?.dosage || "").trim().toLowerCase();
+      return `${name}@${dose}`;
+    })
     .filter(Boolean)
     .slice()
     .sort()
@@ -124,7 +138,7 @@ export default function ResultsPage() {
   };
 
   const currentDrugKey = rowsToDrugKey(rows);
-  const lastAnalyzedKey = namesToKey(result?.medications);
+  const lastAnalyzedKey = medsToKey(result?.medications);
   const hasPendingConfirmation = rows.some(
     (r) => r.normStatus === "ambiguous" || r.normStatus === "unresolved"
   );
@@ -253,6 +267,13 @@ export default function ResultsPage() {
                 </li>
               ))}
             </ul>
+
+            {isDirty && result && !loading && !hasPendingConfirmation && (
+              <p className="mt-2.5 rounded-lg bg-amber-50 px-2.5 py-2 text-[0.8rem] text-amber-800 print:hidden">
+                Your medication list changed. Tap Analyze to refresh the
+                interaction check.
+              </p>
+            )}
 
             <div className="mt-2.5 grid grid-cols-3 gap-2 print:hidden">
               <button

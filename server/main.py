@@ -53,12 +53,19 @@ class NormalizeResponse(BaseModel):
     results: List[NormalizeResultItem]
 
 
+class MedicationInput(BaseModel):
+    """One medication as the patient entered it. Dosage is free-form."""
+
+    name: str
+    dosage: str = ""
+
+
 class AnalyzeRequest(BaseModel):
-    drugs: List[str] = Field(..., min_length=1)
+    drugs: List[MedicationInput] = Field(..., min_length=1)
 
 
 class AnalyzeResponse(BaseModel):
-    medications: List[str]
+    medications: List[MedicationInput]
     interactions: list
     beers_flags: list
     explanation: str
@@ -73,7 +80,7 @@ class ChatTurn(BaseModel):
 
 class AskRequest(BaseModel):
     question: str = Field(..., min_length=1)
-    medications: List[str] = Field(default_factory=list)
+    medications: List[MedicationInput] = Field(default_factory=list)
     history: List[ChatTurn] = Field(default_factory=list)
 
 
@@ -167,12 +174,26 @@ def normalize_medications(body: NormalizeRequest):
 
 @app.post("/api/analyze", response_model=AnalyzeResponse)
 def analyze(body: AnalyzeRequest):
-    """Run interaction and Beers checks and Gemma explanation on confirmed names"""
-    raw = [d.strip() for d in body.drugs if d and d.strip()]
-    if not raw:
+    """Run interaction and Beers checks and Gemma explanation on confirmed names
+
+    Dedupes by canonical name; if the same drug is listed twice with different
+    dosages, the first dosage wins
+    """
+    # Build (canonical_name, dosage) pairs deduped by canonical name.
+    seen = {}
+    for d in body.drugs:
+        nm = (d.name or "").strip()
+        if not nm:
+            continue
+        canonical = service.normalize_drug_name(nm)
+        if canonical and canonical not in seen:
+            seen[canonical] = (d.dosage or "").strip()
+
+    if not seen:
         raise HTTPException(status_code=400, detail="At least one drug name required.")
 
-    names = list(dict.fromkeys(service.normalize_drug_name(d) for d in raw))
+    meds = [{"name": n, "dosage": dose} for n, dose in seen.items()]
+    names = list(seen.keys())
 
     service.warm_drug_profiles(names)
 
@@ -181,7 +202,7 @@ def analyze(body: AnalyzeRequest):
 
     try:
         explanation = service.generate_explanation(
-            names, interactions, beers_flags
+            meds, interactions, beers_flags
         )
     except Exception as e:
         raise HTTPException(
@@ -193,7 +214,7 @@ def analyze(body: AnalyzeRequest):
     moderate = sum(1 for i in interactions if i.get("severity") == "moderate")
 
     return AnalyzeResponse(
-        medications=names,
+        medications=[MedicationInput(**m) for m in meds],
         interactions=interactions,
         beers_flags=beers_flags,
         explanation=explanation,
@@ -209,7 +230,11 @@ def ask(body: AskRequest):
     if not question:
         raise HTTPException(status_code=400, detail="Question is required.")
 
-    meds = [m.strip() for m in body.medications if m and m.strip()]
+    meds = [
+        {"name": m.name.strip(), "dosage": (m.dosage or "").strip()}
+        for m in body.medications
+        if m.name and m.name.strip()
+    ]
     history = [{"role": t.role, "content": t.content} for t in body.history]
 
     try:

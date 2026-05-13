@@ -22,16 +22,23 @@ export default function AskPage() {
   const navigate = useNavigate();
   const { rows } = useMedora();
 
+  // {name, dosage} objects -- backend uses dosage in the chat system prompt
+  // so questions can be answered with patient's dosage information
   const meds = useMemo(
     () =>
       rows
-        .map((r) => (r.normalized || "").trim())
-        .filter(Boolean),
+        .map((r) => ({
+          name: (r.normalized || "").trim(),
+          dosage: (r.dosage || "").trim(),
+        }))
+        .filter((m) => m.name),
     [rows]
   );
 
+  const medNames = useMemo(() => meds.map((m) => m.name), [meds]);
+
   const [messages, setMessages] = useState(() => [
-    { role: "assistant", content: buildGreeting(meds) },
+    { role: "assistant", content: buildGreeting(medNames) },
   ]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
