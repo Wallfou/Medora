@@ -14,7 +14,7 @@ import ollama
 DB_FILE = os.environ.get("MEDORA_DB", "medora.db")
 TEXT_MODEL = os.environ.get("MEDORA_TEXT_MODEL", "medora-gemma4-text")
 VISION_MODEL = os.environ.get("MEDORA_VISION_MODEL", "gemma4:e2b")
-SUMMARY_MODEL = os.environ.get("MEDORA_SUMMARY_MODEL", "gemma4:e2b")
+SUMMARY_MODEL = os.environ.get("MEDORA_SUMMARY_MODEL", "medora-gemma4-text")
 SUMMARY_TIMEOUT_S = float(os.environ.get("MEDORA_SUMMARY_TIMEOUT", "30"))
 
 _logger = logging.getLogger(__name__)
@@ -96,35 +96,36 @@ def _clean_raw_text(raw):
 
 
 def _summarize_side_effects(drug_name, raw_text):
-    """Ask the local LLM to compress DrugBank toxicity prose into 2-3 sentences.
+    """Extract patient-relevant side effects from DrugBank toxicity field
 
-    Permissive prompt — summarizes whatever safety information is present
-    (common effects OR overdose risk) rather than forbidding categories that
-    might be the entire content of the source field. 
-    
-    Retries once with a simpler prompt before giving up
+    Returns a comma-separated list of short phrases (with optional parenthetical
+    context). List format so the chat-injection layer can compose
+    its own natural language in Medora's tone instead of mirroring a fixed
+    summary's voice or duplicating disclaimers
+
+    Retries once with a simpler prompt before giving up.
     """
     cleaned = _clean_raw_text(raw_text)
     if not cleaned:
         return ""
 
     primary_prompt = (
-        f"You are writing a brief patient-safety note about {drug_name}.\n\n"
-        f"Read this reference text from a drug database and write 2 to 3 short, "
-        f"plain-language sentences for a patient. Cover what they should watch "
-        f"for or be aware of when taking this medicine. Use everyday words. If "
-        f"the text only describes the risk of taking too much, write about that "
-        f"risk in patient-friendly terms, but without specific dosing numbers. "
-        f"Skip animal-study language. Start directly with the safety information.\n\n"
-        f"REFERENCE TEXT:\n{cleaned}\n\n"
-        f"PATIENT NOTE:"
+        f"From the medical reference text below for {drug_name}, extract the side "
+        f"effects and safety concerns a patient should be aware of.\n\n"
+        f"Output ONLY a comma-separated list of short phrases. Each phrase should "
+        f"be brief but may include a short parenthetical for context where useful. "
+        f"No introduction, no disclaimers, no advice, no sentences -- just the items.\n\n"
+        f"Example output: bleeding more easily (especially from gums or GI tract), "
+        f"bruising, nosebleeds, stomach pain, harm during pregnancy\n\n"
+        f"REFERENCE:\n{cleaned}\n\n"
+        f"LIST:"
     )
 
     fallback_prompt = (
-        f"In 2 to 3 short, plain-language sentences, summarize for a patient "
-        f"what this text says about the safety of {drug_name}:\n\n"
+        f"List the side effects and safety concerns of {drug_name} from this text "
+        f"as a comma-separated list of short phrases. No sentences, no advice.\n\n"
         f"{cleaned}\n\n"
-        f"Summary:"
+        f"LIST:"
     )
 
     # Can't override temperature: Gemma 4 e2b safety alignment cuts
