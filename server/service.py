@@ -127,14 +127,15 @@ def _summarize_side_effects(drug_name, raw_text):
         f"Summary:"
     )
 
+    # Can't override temperature: Gemma 4 e2b safety alignment cuts
+    # off summaries at low temperatures (0.3) when the input mentions doses,
+    # because the sharpened distribution traps the model in refusal tokens.
+    # The model's own defaults (~0.7-0.8) produce reliable patient summaries.
     client = ollama.Client(timeout=SUMMARY_TIMEOUT_S)
-    for attempt, (label, prompt, temp) in enumerate(
-        [("primary", primary_prompt, 0.3), ("fallback", fallback_prompt, 0.5)], 1
-    ):
+    for label, prompt in [("primary", primary_prompt), ("fallback", fallback_prompt)]:
         response = client.chat(
             model=SUMMARY_MODEL,
             messages=[{"role": "user", "content": prompt}],
-            options={"num_predict": 300, "temperature": temp},
         )
         result = (response["message"]["content"] or "").strip()
         if result:
