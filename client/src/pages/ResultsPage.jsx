@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { FaFilePdf, FaPlus, FaCamera, FaSyncAlt } from "react-icons/fa";
 import { BsChatDots } from "react-icons/bs";
 import { useMedora } from "../context/MedoraContext.jsx";
+import NormalizationHint from "../components/NormalizationHint.jsx";
 
 const SEVERITY_ORDER = { major: 0, moderate: 1, minor: 2 };
 
@@ -49,6 +50,15 @@ function rowsToDrugKey(rows) {
     .join("|");
 }
 
+function namesToKey(names) {
+  return (names || [])
+    .map((n) => (n || "").trim().toLowerCase())
+    .filter(Boolean)
+    .slice()
+    .sort()
+    .join("|");
+}
+
 export default function ResultsPage() {
   const navigate = useNavigate();
   const {
@@ -61,15 +71,13 @@ export default function ResultsPage() {
     addRow,
     removeRow,
     analyzeDrugs,
+    clearRowNormalization,
     clearError,
   } = useMedora();
   const [openIx, setOpenIx] = useState({});
   const [openBeers, setOpenBeers] = useState({});
   const [focusId, setFocusId] = useState(null);
   const [drugsCollapsed, setDrugsCollapsed] = useState(false);
-  const [lastAnalyzedKey, setLastAnalyzedKey] = useState(() =>
-    rowsToDrugKey(rows),
-  );
   const inputRefs = useRef({});
 
   useEffect(() => {
@@ -116,15 +124,15 @@ export default function ResultsPage() {
   };
 
   const currentDrugKey = rowsToDrugKey(rows);
-  const isDirty = currentDrugKey !== lastAnalyzedKey;
+  const lastAnalyzedKey = namesToKey(result?.medications);
+  const hasPendingConfirmation = rows.some(
+    (r) => r.normStatus === "ambiguous" || r.normStatus === "unresolved"
+  );
+  const isDirty = currentDrugKey !== lastAnalyzedKey || hasPendingConfirmation;
 
   const handleAnalyze = () => {
     clearError();
-    const drugs = rows
-      .map((r) => (r.normalized || "").trim())
-      .filter(Boolean);
-    setLastAnalyzedKey(currentDrugKey);
-    analyzeDrugs(drugs);
+    analyzeDrugs();
   };
 
   const drugCount = rows.length;
@@ -177,57 +185,71 @@ export default function ResultsPage() {
               {rows.map((r) => (
                 <li
                   key={r.id}
-                  className="flex items-center gap-2 rounded-2xl bg-[#f4f4f5] p-3"
+                  className="flex flex-col gap-2 rounded-2xl bg-[#f4f4f5] p-3"
                 >
-                  <div className="min-w-0 flex-1">
-                    <input
-                      ref={(el) => {
-                        if (el) inputRefs.current[r.id] = el;
-                        else delete inputRefs.current[r.id];
-                      }}
-                      className="w-full border-none bg-transparent p-0 text-[1.25rem] font-bold text-text placeholder:font-medium placeholder:text-muted-2 focus:outline-none"
-                      value={r.normalized}
-                      onChange={(e) => {
-                        clearError();
-                        const v = e.target.value;
-                        if (r.extracted) {
-                          updateRow(r.id, "normalized", v);
-                        } else {
-                          patchRow(r.id, { normalized: v, drug_name: v });
-                        }
-                      }}
-                      placeholder="Medication name"
-                      autoComplete="off"
-                    />
-                    <input
-                      className="mt-0.5 w-full border-none bg-transparent p-0 text-[0.9rem] text-muted placeholder:text-muted-2 focus:outline-none"
-                      value={r.dosage}
-                      onChange={(e) => {
-                        clearError();
-                        updateRow(r.id, "dosage", e.target.value);
-                      }}
-                      placeholder="Dosage (optional)"
-                      autoComplete="off"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full border-none bg-red-100 text-red-700 print:hidden"
-                    onClick={() => {
-                      clearError();
-                      removeRow(r.id);
-                    }}
-                    aria-label={`Remove ${r.normalized || r.drug_name || "medication"}`}
-                  >
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none">
-                      <path
-                        d="M8 8l8 8M16 8l-8 8"
-                        stroke="currentColor"
-                        strokeWidth="2.2"
-                        strokeLinecap="round"
+                  <div className="flex items-center gap-2">
+                    <div className="min-w-0 flex-1">
+                      <input
+                        ref={(el) => {
+                          if (el) inputRefs.current[r.id] = el;
+                          else delete inputRefs.current[r.id];
+                        }}
+                        className="w-full border-none bg-transparent p-0 text-[1.25rem] font-bold text-text placeholder:font-medium placeholder:text-muted-2 focus:outline-none"
+                        value={r.normalized}
+                        onChange={(e) => {
+                          clearError();
+                          const v = e.target.value;
+                          const reset = { normStatus: null, candidates: [] };
+                          if (r.extracted) {
+                            patchRow(r.id, { normalized: v, ...reset });
+                          } else {
+                            patchRow(r.id, {
+                              normalized: v,
+                              drug_name: v,
+                              ...reset,
+                            });
+                          }
+                        }}
+                        placeholder="Medication name"
+                        autoComplete="off"
                       />
-                    </svg>
-                  </button>
+                      <input
+                        className="mt-0.5 w-full border-none bg-transparent p-0 text-[0.9rem] text-muted placeholder:text-muted-2 focus:outline-none"
+                        value={r.dosage}
+                        onChange={(e) => {
+                          clearError();
+                          updateRow(r.id, "dosage", e.target.value);
+                        }}
+                        placeholder="Dosage (optional)"
+                        autoComplete="off"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full border-none bg-red-100 text-red-700 print:hidden"
+                      onClick={() => {
+                        clearError();
+                        removeRow(r.id);
+                      }}
+                      aria-label={`Remove ${r.normalized || r.drug_name || "medication"}`}
+                    >
+                      <svg viewBox="0 0 24 24" width="16" height="16" fill="none">
+                        <path
+                          d="M8 8l8 8M16 8l-8 8"
+                          stroke="currentColor"
+                          strokeWidth="2.2"
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                  <NormalizationHint
+                    row={r}
+                    onPick={(name) => {
+                      clearError();
+                      clearRowNormalization(r.id, name);
+                    }}
+                  />
                 </li>
               ))}
             </ul>

@@ -155,6 +155,54 @@ export function MedoraProvider({ children }) {
     );
   }, []);
 
+  // Normalize the given rows against the DB and write status/candidates back.
+  // Returns { ok: true, drugs } when every row resolved confidently, or
+  // { ok: false } when one or more need user confirmation
+  // caller should bail out of analyze).
+  const normalizeAndApply = useCallback(async (activeRows) => {
+    const normData = await apiJson("/api/normalize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        medications: activeRows.map((r) => r.normalized.trim()),
+      }),
+    });
+
+    const resultsByIndex = normData.results || [];
+    let needsConfirmation = false;
+    const idToUpdate = new Map();
+    activeRows.forEach((r, i) => {
+      const out = resultsByIndex[i];
+      if (!out) return;
+      if (out.status === "resolved") {
+        idToUpdate.set(r.id, {
+          normalized: out.resolved || r.normalized,
+          normStatus: "resolved",
+          candidates: [],
+        });
+      } else {
+        needsConfirmation = true;
+        idToUpdate.set(r.id, {
+          normStatus: out.status,
+          candidates: out.candidates || [],
+        });
+      }
+    });
+
+    setRows((prev) =>
+      prev.map((r) =>
+        idToUpdate.has(r.id) ? { ...r, ...idToUpdate.get(r.id) } : r
+      )
+    );
+
+    if (needsConfirmation) return { ok: false };
+
+    const drugs = activeRows
+      .map((r) => (idToUpdate.get(r.id)?.normalized || r.normalized).trim())
+      .filter(Boolean);
+    return { ok: true, drugs };
+  }, []);
+
   const runAnalyze = useCallback(async () => {
     setError(null);
     const activeRows = rows.filter((r) => r.normalized && r.normalized.trim());
@@ -165,59 +213,18 @@ export function MedoraProvider({ children }) {
 
     setLoading(true);
     try {
-      const normData = await apiJson("/api/normalize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          medications: activeRows.map((r) => r.normalized.trim()),
-        }),
-      });
-
-      const resultsByIndex = normData.results || [];
-      let needsConfirmation = false;
-      const idToUpdate = new Map();
-      activeRows.forEach((r, i) => {
-        const out = resultsByIndex[i];
-        if (!out) return;
-        if (out.status === "resolved") {
-          idToUpdate.set(r.id, {
-            normalized: out.resolved || r.normalized,
-            normStatus: "resolved",
-            candidates: [],
-          });
-        } else {
-          needsConfirmation = true;
-          idToUpdate.set(r.id, {
-            normStatus: out.status,
-            candidates: out.candidates || [],
-          });
-        }
-      });
-
-      setRows((prev) =>
-        prev.map((r) =>
-          idToUpdate.has(r.id) ? { ...r, ...idToUpdate.get(r.id) } : r
-        )
-      );
-
-      if (needsConfirmation) {
+      const norm = await normalizeAndApply(activeRows);
+      if (!norm.ok) {
         setError(
           "We couldn't confidently match one or more medications. Please pick the closest match below."
         );
         return;
       }
 
-      const drugs = activeRows
-        .map((r) => {
-          const u = idToUpdate.get(r.id);
-          return (u?.normalized || r.normalized).trim();
-        })
-        .filter(Boolean);
-
       const data = await apiJson("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ drugs }),
+        body: JSON.stringify({ drugs: norm.drugs }),
       });
       setResult(data);
       navigate("/results");
@@ -226,11 +233,14 @@ export function MedoraProvider({ children }) {
     } finally {
       setLoading(false);
     }
-  }, [navigate, rows]);
+  }, [navigate, rows, normalizeAndApply]);
 
-  const analyzeDrugs = useCallback(async (drugs) => {
+  // Re-analyze the current rows in place -> runAnalyze but no navigation
+  // and uses the analyzeReqRef de-dupe so rapid edits don't clobber each other. 
+  const analyzeDrugs = useCallback(async () => {
     setError(null);
-    if (!drugs.length) {
+    const activeRows = rows.filter((r) => r.normalized && r.normalized.trim());
+    if (!activeRows.length) {
       analyzeReqRef.current++;
       setResult({
         medications: [],
@@ -245,10 +255,18 @@ export function MedoraProvider({ children }) {
     const myId = ++analyzeReqRef.current;
     setLoading(true);
     try {
+      const norm = await normalizeAndApply(activeRows);
+      if (myId !== analyzeReqRef.current) return;
+      if (!norm.ok) {
+        setError(
+          "We couldn't confidently match one or more medications. Please pick the closest match below."
+        );
+        return;
+      }
       const data = await apiJson("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ drugs }),
+        body: JSON.stringify({ drugs: norm.drugs }),
       });
       if (myId === analyzeReqRef.current) setResult(data);
     } catch (e) {
@@ -256,7 +274,7 @@ export function MedoraProvider({ children }) {
     } finally {
       if (myId === analyzeReqRef.current) setLoading(false);
     }
-  }, []);
+  }, [rows, normalizeAndApply]);
 
   const restart = useCallback(() => {
     setFile(null);
