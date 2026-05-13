@@ -7,9 +7,11 @@ import logging
 import os
 import re
 import sqlite3
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 import ollama
+from rapidfuzz import fuzz, process
 
 DB_FILE = os.environ.get("MEDORA_DB", "medora.db")
 TEXT_MODEL = os.environ.get("MEDORA_TEXT_MODEL", "medora-gemma4-text")
@@ -63,6 +65,257 @@ def _resolve_to_profile_name(db, name_lower):
         (name_lower,),
     ).fetchone()
     return row[0] if row else name_lower
+
+
+# Medication name normalization
+# Resolution layers, in order of confidence:
+# 1. Strip descriptors / strengths / dose forms
+# 2. Exact match against drugs.name or drug_aliases.alias
+# 3. Fuzzy match (rapidfuzz WRatio) against the same pool, deduped per canonical drug
+# Result statuses: "resolved", "ambiguous", "unresolved"
+
+# Longest phrases first so "regular strength" matches before "regular".
+_DESCRIPTOR_WORDS = sorted(
+    [
+        "baby", "babies",
+        "children's", "childrens", "children", "child's", "child",
+        "kids'", "kids", "kid's",
+        "pediatric", "infant", "infants'", "infant's", "infants",
+        "adult", "adults", "adults'",
+        "low-dose", "low dose", "lo-dose", "lodose",
+        "regular strength", "regular", "extra strength", "extra-strength",
+        "maximum strength", "max strength", "max-strength",
+        "mini", "junior", "jr",
+        "chewable", "chewables", "chew",
+        "fast-acting", "fast acting",
+        "rapid release", "rapid-release",
+        "coated", "uncoated", "enteric coated", "enteric-coated",
+    ],
+    key=len,
+    reverse=True,
+)
+_DESCRIPTOR_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(w) for w in _DESCRIPTOR_WORDS) + r")\b",
+    re.IGNORECASE,
+)
+
+# Pharmacokinetic release form suffixes -> same active ingredient, safe to strip for identification
+# "ER" / "XR" / etc
+_RELEASE_FORM_RE = re.compile(
+    r"\b(?:ER|XR|SR|CR|IR|XL|MR|DR|ODT|HCL)\b",
+    re.IGNORECASE,
+)
+
+# Dosage forms
+_DOSE_FORM_RE = re.compile(
+    r"\b(?:tablets?|capsules?|caplets?|pills?|gelcaps?|softgels?|gel|"
+    r"drops?|syrup|suspension|suppositor(?:y|ies)|patch(?:es)?|"
+    r"cream|ointment|spray|inhaler|lozenges?|powder|liquid)\b",
+    re.IGNORECASE,
+)
+
+# Strength values: "81mg", "500 mg", "5/325", "10%"
+_STRENGTH_RE = re.compile(
+    r"\b\d+(?:[.,]\d+)?\s*/\s*\d+(?:[.,]\d+)?\s*"
+    r"(?:mg|mcg|µg|g|ml|iu|units?|%)?\b"
+    r"|\b\d+(?:[.,]\d+)?\s*(?:mg|mcg|µg|g|ml|iu|units?|%)\b",
+    re.IGNORECASE,
+)
+
+# Punctuation we want to strip out (commas between strengths, trailing parentheticals
+# Hyphens are kept since some drug names include them
+_PUNCT_RE = re.compile(r"[(),;:]")
+
+
+def _strip_descriptors(text):
+    """Remove descriptors, strengths, dose forms, and release-form suffixes.
+    Returns the cleaned candidate string. Whitespace collapsed.
+    """
+    if not text:
+        return ""
+    s = text.lower()
+    s = _STRENGTH_RE.sub(" ", s)
+    s = _DESCRIPTOR_RE.sub(" ", s)
+    s = _DOSE_FORM_RE.sub(" ", s)
+    s = _RELEASE_FORM_RE.sub(" ", s)
+    s = _PUNCT_RE.sub(" ", s)
+    s = _WS_RE.sub(" ", s).strip()
+    return s
+
+
+_choices_cache = None
+# Set to Trueto skip eager build at import time
+_WARM_NORMALIZE_AT_IMPORT = os.environ.get("MEDORA_WARM_NORMALIZE", "1") != "0"
+
+
+def _get_normalize_choices():
+    """Lazy build the alias to canonical lookup table for fuzzy search
+
+    Drugs.name values map to themselves; drug_aliases entries map to their
+    canonical drug. Drug-name keys take precedence over conflicting alias keys.
+    Result is cached for the process lifetime.
+    """
+    global _choices_cache
+    if _choices_cache is not None:
+        return _choices_cache
+
+    db = get_db()
+    try:
+        choices = {}
+        for (name,) in db.execute("SELECT name FROM drugs"):
+            if name:
+                choices[name.lower()] = name.lower()
+        for alias, canonical in db.execute(
+            "SELECT alias, canonical FROM drug_aliases"
+        ):
+            if not alias or not canonical:
+                continue
+            a = alias.lower()
+            if a not in choices:
+                choices[a] = canonical.lower()
+    finally:
+        db.close()
+
+    _choices_cache = choices
+    return choices
+
+
+if _WARM_NORMALIZE_AT_IMPORT:
+    try:
+        _t0 = time.perf_counter()
+        _get_normalize_choices()
+        _logger.info(
+            "normalize: warmed choices cache (%d entries) in %.0f ms",
+            len(_choices_cache or {}),
+            (time.perf_counter() - _t0) * 1000,
+        )
+    except Exception as _e:
+        # fall back to lazy build if db not ready yet
+        _logger.warning("normalize: eager warm failed (%s); will lazy-build", _e)
+
+
+def _fuzzy_candidates(query, limit=10):
+    """Return top fuzzy matches against drug names + aliases, deduped per canonical drug.
+
+    Each candidate: {"name": canonical, "matched_as": alias-or-name, "score": int}.
+    Sorted by score descending.
+    """
+    if not query:
+        return []
+    choices = _get_normalize_choices()
+    if not choices:
+        return []
+
+    raw = process.extract(
+        query, list(choices.keys()), scorer=fuzz.WRatio, limit=limit * 3
+    )
+    best_per_canonical = {}
+    for matched, score, _ in raw:
+        canonical = choices[matched]
+        existing = best_per_canonical.get(canonical)
+        if existing is None or score > existing["score"]:
+            best_per_canonical[canonical] = {
+                "name": canonical,
+                "matched_as": matched,
+                "score": int(score),
+            }
+
+    ranked = sorted(best_per_canonical.values(), key=lambda c: -c["score"])
+    return ranked[:limit]
+
+
+def normalize_medication(raw_input):
+    """Map a patient's input string to a canonical drug name. 
+
+    Returns a dict with:
+        raw -- the original input
+        cleaned -- after descriptor/strength/form stripping
+        status -- "resolved" | "ambiguous" | "unresolved"
+        resolved -- canonical drug name (only when resolved)
+        candidates -- list of {name, matched_as, score} (for ambiguous/unresolved)
+
+    Resolution rules:
+        - Exact hit on drugs.name or drug_aliases.alias after stripping  -> resolved
+        - Top fuzzy match >= 92 AND beats #2 by >= 8 points -> resolved
+        - Otherwise, if top fuzzy >= 70 -> ambiguous
+        - Otherwise -> unresolved
+    """
+    raw = (raw_input or "").strip()
+    cleaned = _strip_descriptors(raw)
+
+    if not cleaned:
+        return {
+            "raw": raw,
+            "cleaned": "",
+            "status": "unresolved",
+            "resolved": "",
+            "candidates": [],
+        }
+
+    db = get_db()
+    try:
+        row = db.execute(
+            "SELECT name FROM drugs WHERE name = ?", (cleaned,)
+        ).fetchone()
+        if row:
+            return {
+                "raw": raw,
+                "cleaned": cleaned,
+                "status": "resolved",
+                "resolved": row[0],
+                "candidates": [],
+            }
+        row = db.execute(
+            "SELECT canonical FROM drug_aliases WHERE alias = ?", (cleaned,)
+        ).fetchone()
+        if row:
+            return {
+                "raw": raw,
+                "cleaned": cleaned,
+                "status": "resolved",
+                "resolved": row[0],
+                "candidates": [],
+            }
+    finally:
+        db.close()
+
+    candidates = _fuzzy_candidates(cleaned, limit=5)
+    if not candidates:
+        return {
+            "raw": raw,
+            "cleaned": cleaned,
+            "status": "unresolved",
+            "resolved": "",
+            "candidates": [],
+        }
+
+    top = candidates[0]
+    runner_up_score = candidates[1]["score"] if len(candidates) > 1 else 0
+    if top["score"] >= 92 and (top["score"] - runner_up_score) >= 8:
+        return {
+            "raw": raw,
+            "cleaned": cleaned,
+            "status": "resolved",
+            "resolved": top["name"],
+            "candidates": [],
+        }
+
+    if top["score"] < 70:
+        return {
+            "raw": raw,
+            "cleaned": cleaned,
+            "status": "unresolved",
+            "resolved": "",
+            "candidates": candidates[:3],
+        }
+
+    return {
+        "raw": raw,
+        "cleaned": cleaned,
+        "status": "ambiguous",
+        "resolved": "",
+        "candidates": candidates,
+    }
 
 
 _CITATION_RE = re.compile(r"\[[A-Za-z0-9 ,.\-]+\]")

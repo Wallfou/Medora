@@ -31,6 +31,28 @@ class ExtractResponse(BaseModel):
     items: List[ExtractedItem]
 
 
+class NormalizeRequest(BaseModel):
+    medications: List[str] = Field(..., min_length=1)
+
+
+class NormalizeCandidate(BaseModel):
+    name: str
+    matched_as: str = ""
+    score: int
+
+
+class NormalizeResultItem(BaseModel):
+    raw: str
+    cleaned: str
+    status: str
+    resolved: str = ""
+    candidates: List[NormalizeCandidate] = Field(default_factory=list)
+
+
+class NormalizeResponse(BaseModel):
+    results: List[NormalizeResultItem]
+
+
 class AnalyzeRequest(BaseModel):
     drugs: List[str] = Field(..., min_length=1)
 
@@ -126,6 +148,21 @@ async def extract_from_image(file: UploadFile = File(...)):
         )
 
     return ExtractResponse(items=items)
+
+
+@app.post("/api/normalize", response_model=NormalizeResponse)
+def normalize_medications(body: NormalizeRequest):
+    """Resolve patient entered drug names to canonical forms.
+
+    Returns one result per input. Callers should surface candidates to the
+    user for any item whose status is "ambiguous" or "unresolved" rather than
+    silently picking the top match. 
+    """
+    results = [
+        NormalizeResultItem(**service.normalize_medication(m or ""))
+        for m in body.medications
+    ]
+    return NormalizeResponse(results=results)
 
 
 @app.post("/api/analyze", response_model=AnalyzeResponse)

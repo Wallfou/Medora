@@ -140,15 +140,80 @@ export function MedoraProvider({ children }) {
     setRows((prev) => prev.filter((r) => r.id !== id));
   }, []);
 
+  const clearRowNormalization = useCallback((id, resolvedName) => {
+    setRows((prev) =>
+      prev.map((r) =>
+        r.id === id
+          ? {
+              ...r,
+              normalized: resolvedName,
+              normStatus: "resolved",
+              candidates: [],
+            }
+          : r
+      )
+    );
+  }, []);
+
   const runAnalyze = useCallback(async () => {
     setError(null);
-    const drugs = rows.map((r) => r.normalized.trim()).filter(Boolean);
-    if (!drugs.length) {
+    const activeRows = rows.filter((r) => r.normalized && r.normalized.trim());
+    if (!activeRows.length) {
       setError("Add at least one medication name for the database lookup.");
       return;
     }
+
     setLoading(true);
     try {
+      const normData = await apiJson("/api/normalize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          medications: activeRows.map((r) => r.normalized.trim()),
+        }),
+      });
+
+      const resultsByIndex = normData.results || [];
+      let needsConfirmation = false;
+      const idToUpdate = new Map();
+      activeRows.forEach((r, i) => {
+        const out = resultsByIndex[i];
+        if (!out) return;
+        if (out.status === "resolved") {
+          idToUpdate.set(r.id, {
+            normalized: out.resolved || r.normalized,
+            normStatus: "resolved",
+            candidates: [],
+          });
+        } else {
+          needsConfirmation = true;
+          idToUpdate.set(r.id, {
+            normStatus: out.status,
+            candidates: out.candidates || [],
+          });
+        }
+      });
+
+      setRows((prev) =>
+        prev.map((r) =>
+          idToUpdate.has(r.id) ? { ...r, ...idToUpdate.get(r.id) } : r
+        )
+      );
+
+      if (needsConfirmation) {
+        setError(
+          "We couldn't confidently match one or more medications. Please pick the closest match below."
+        );
+        return;
+      }
+
+      const drugs = activeRows
+        .map((r) => {
+          const u = idToUpdate.get(r.id);
+          return (u?.normalized || r.normalized).trim();
+        })
+        .filter(Boolean);
+
       const data = await apiJson("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -229,6 +294,7 @@ export function MedoraProvider({ children }) {
       removeRow,
       runAnalyze,
       analyzeDrugs,
+      clearRowNormalization,
       restart,
     }),
     [
@@ -247,6 +313,7 @@ export function MedoraProvider({ children }) {
       removeRow,
       runAnalyze,
       analyzeDrugs,
+      clearRowNormalization,
       restart,
     ]
   );
