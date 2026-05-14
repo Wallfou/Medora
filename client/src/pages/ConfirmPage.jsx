@@ -53,76 +53,39 @@ export default function ConfirmPage() {
             className="flex items-stretch gap-2 rounded-[14px] bg-white py-4 pl-4 pr-3 shadow-[0_1px_3px_rgba(0,0,0,0.06)]"
           >
             <div className="min-w-0 flex-1">
-              {r.extracted && r.drug_name ? (
-                <>
-                  <p className="m-0 text-[1.05rem] font-bold text-text">{r.drug_name}</p>
-                  <p className="mb-0 mt-0.5 text-[0.88rem] text-muted">
-                    {r.dosage || <span className="text-muted-2">—</span>}
-                  </p>
-                  <label className="mt-2.5 flex flex-col gap-1">
-                    <span className="text-[0.7rem] font-semibold uppercase tracking-wide text-muted-2">
-                      Database lookup
-                    </span>
-                    <input
-                      className="w-full rounded-lg border border-gray-200 px-2.5 py-2 text-[0.9rem] focus:border-primary focus:outline focus:outline-2 focus:outline-[rgba(45,122,94,0.25)]"
-                      value={r.normalized}
-                      onChange={(e) => {
-                        clearError();
-                        patchRow(r.id, {
-                          normalized: e.target.value,
-                          normStatus: null,
-                          candidates: [],
-                        });
-                      }}
-                      placeholder="e.g. metformin"
-                      autoComplete="off"
-                    />
-                  </label>
-                  <NormalizationHint
-                    row={r}
-                    onPick={(name) => {
-                      clearError();
-                      clearRowNormalization(r.id, name);
-                    }}
-                  />
-                </>
-              ) : (
-                <>
-                  <input
-                    className="w-full rounded-lg border border-gray-200 px-2.5 py-2 text-[1.05rem] font-bold focus:border-primary focus:outline focus:outline-2 focus:outline-[rgba(45,122,94,0.25)]"
-                    value={r.normalized}
-                    onChange={(e) => {
-                      clearError();
-                      const v = e.target.value;
-                      patchRow(r.id, {
-                        normalized: v,
-                        drug_name: v,
-                        normStatus: null,
-                        candidates: [],
-                      });
-                    }}
-                    placeholder="Medication name"
-                    autoComplete="off"
-                  />
-                  <NormalizationHint
-                    row={r}
-                    onPick={(name) => {
-                      clearError();
-                      clearRowNormalization(r.id, name);
-                    }}
-                  />
-                  <input
-                    className="mt-1.5 w-full rounded-lg border border-gray-200 px-2.5 py-2 text-[0.9rem] text-muted focus:border-primary focus:outline focus:outline-2 focus:outline-[rgba(45,122,94,0.25)]"
-                    value={r.dosage}
-                    onChange={(e) => {
-                      clearError();
-                      updateRow(r.id, "dosage", e.target.value);
-                    }}
-                    placeholder="Dosage (optional)"
-                    autoComplete="off"
-                  />
-                </>
-              )}
+              <input
+                className="w-full rounded-lg border border-gray-200 px-2.5 py-2 text-[1.05rem] font-bold focus:border-primary focus:outline focus:outline-2 focus:outline-[rgba(45,122,94,0.25)]"
+                value={r.normalized}
+                onChange={(e) => {
+                  clearError();
+                  const v = e.target.value;
+                  patchRow(r.id, {
+                    normalized: v,
+                    drug_name: v,
+                    normStatus: null,
+                    candidates: [],
+                  });
+                }}
+                placeholder="Medication name"
+                autoComplete="off"
+              />
+              <NormalizationHint
+                row={r}
+                onPick={(name) => {
+                  clearError();
+                  clearRowNormalization(r.id, name);
+                }}
+              />
+              <input
+                className="mt-1.5 w-full rounded-lg border border-gray-200 px-2.5 py-2 text-[0.9rem] text-muted focus:border-primary focus:outline focus:outline-2 focus:outline-[rgba(45,122,94,0.25)]"
+                value={r.dosage}
+                onChange={(e) => {
+                  clearError();
+                  updateRow(r.id, "dosage", e.target.value);
+                }}
+                placeholder="Dosage (optional)"
+                autoComplete="off"
+              />
             </div>
             <div className="flex flex-col items-center justify-center gap-2 pl-1">
               <span
