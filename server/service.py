@@ -729,28 +729,13 @@ def _build_medication_reference(meds):
     for name, dosage in meds:
         profile = get_drug_profile(name)
         if not profile:
-            # No DB profile, but we still want the dose visible to the chat.
             if dosage:
                 sections.append(f"{name.upper()}\n  Patient's dose: {dosage}")
             continue
 
-        brand_suffix = ""
-        brands_raw = profile.get("brand_names") or ""
-        if brands_raw:
-            try:
-                brands = json.loads(brands_raw)
-                if brands:
-                    brand_suffix = f" (also sold as {', '.join(brands[:3])})"
-            except (json.JSONDecodeError, TypeError):
-                pass
-
-        lines = [f"{name.upper()}{brand_suffix}"]
+        lines = [name.upper()]
         if dosage:
             lines.append(f"  Patient's dose: {dosage}")
-        if profile.get("drug_class"):
-            lines.append(f"  Class: {profile['drug_class']}")
-        if profile.get("indication"):
-            lines.append(f"  Used for: {profile['indication']}")
         if profile.get("side_effects"):
             lines.append(f"  Common side effects: {profile['side_effects']}")
 
@@ -761,13 +746,10 @@ def _build_medication_reference(meds):
         return ""
 
     return (
-        "MEDICATION REFERENCE\n"
-        "Use the facts below as your source of truth when answering about these "
-        "specific medications. The 'Patient's dose' line is what the patient "
-        "actually takes -- reference it when the question is dose-related. "
-        "Paraphrase naturally; do not quote verbatim or list every field unless "
-        "the patient asks for it. For drugs not listed here, use your general "
-        "training knowledge.\n\n"
+        "Background facts about the patient's medications. Weave in only what "
+        "directly answers the patient's question; do not list every field unless "
+        "asked. Stay in your normal warm, conversational voice. For drugs not "
+        "listed here, use your general training knowledge.\n\n"
         + "\n\n".join(sections)
     )
 
