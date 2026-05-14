@@ -1,49 +1,70 @@
-# MedGuard
+# Medora
 
-Offline medication safety checker for elderly patients and caregivers. Photograph pill bottles or type drug names to check for dangerous interactions and age-inappropriate medications — all processed locally on your device.
+Medora is an offline medication safety assistant for older adults and caregivers. Photograph a pill bottle or type drug names, and Medora checks for dangerous interactions and age-inappropriate medications, then explains the findings in plain language. Everything runs locally — no network calls with patient data.
 
-Built for the [Gemma 4 Good Hackathon](https://www.kaggle.com/competitions/gemma-4-good-hackathon) on Kaggle.
+Built for the [Gemma 4 Good Hackathon](https://www.kaggle.com/competitions/gemma-4-good-hackathon).
 
----
+## How it works
 
-## What It Does
+Medora has three parts:
 
-1. **Medication label OCR** — Point your camera at a pill bottle. Gemma 4's vision extracts the drug name and dosage.
-2. **Drug-drug interaction check** — Cross-references all your medications against an offline database of 1.4M+ interactions sourced from DrugBank.
-3. **Beers Criteria screening** — Flags medications that the American Geriatrics Society considers potentially inappropriate for adults over 65.
-4. **Plain-language explanations** — Gemma 4 explains risks and alternatives in simple, caring language suitable for non-medical users.
-5. **Doctor visit report** — Generates a summary to bring to your next appointment.
+- **Frontend** (`client/`) — React + Vite single-page app. Mobile-first UI for capturing labels, confirming the extracted medications, and reading the safety report.
+- **Backend** (`server/`, `app.py`) — FastAPI server exposing `/api/extract`, `/api/normalize`, `/api/analyze`, and `/api/ask`. Orchestrates OCR, drug-name resolution, interaction lookup, and LLM-generated explanations.
+- **Database** (`medora.db`, built by `build_drug_db.py`) — SQLite containing RxNorm identifiers, DrugBank interaction data, and the AGS Beers Criteria.
 
----
+A typical request flows: photo → Gemma 4 vision extracts `(drug_name, dosage)` → name normalized against RxNorm → SQLite lookup for interactions and Beers flags → Gemma 4 writes a plain-language summary.
 
-## Tech Stack
+## Features
+
+- Camera and gallery upload, with manual entry as a fallback
+- OCR of medication labels via Gemma 4's native multimodal model
+- 1.4M+ drug-drug interactions sourced from DrugBank 6.0
+- AGS 2023 Beers Criteria screening for adults over 65
+- RxNorm-backed name normalization with "did you mean…" confirmations
+- Plain-language explanations and a printable visit summary
+
+## Fine-tuning
+
+The off-the-shelf Gemma 4 model produces clinically accurate but cold, jargon-heavy answers — the wrong register for an older patient reading an interaction warning. We fine-tuned it to sound like a careful, warm pharmacist who explains things plainly.
+
+- **Base model:** `unsloth/gemma-4-E2B-it`, loaded in 4-bit.
+- **Method:** LoRA (rank 32, alpha 64) on all attention and MLP projections, via [Unsloth](https://unsloth.ai) and TRL's `SFTTrainer`. Response-only loss masking so the model learns to *produce* Medora's voice, not parrot the prompt.
+- **Dataset:** ~140 curated `(system, user, assistant)` examples in `training/medora_train.jsonl`. Each system prompt establishes Medora's persona — short sentences, plain language, no repeated disclaimers, defer diagnosis and dosing to a doctor. Assistant turns model the desired tone: acknowledge concerns, name warning signs clearly, give practical guidance, avoid hedging.
+- **Training:** 6 epochs, learning rate 1e-4, bf16, ~10 minutes on a Kaggle T4 x2 instance. The full notebook is in `training/medora-fine-tune.ipynb`.
+- **Deployment:** the trained adapter is merged and exported to GGUF (`training/medora_gguf_export.ipynb`) and loaded via Ollama as `medora-gemma4-text`, which is what the backend calls at runtime.
+
+## Tech stack
 
 | Component | Tool |
-|-----------|------|
-| LLM | [Gemma 4](https://blog.google/innovation-and-ai/technology/developers-tools/gemma-4/) (E4B or 26B MoE) via [Ollama](https://ollama.com) |
-| Vision/OCR | Gemma 4 native multimodal (image → text) |
-| Drug interactions | [DrugBank 6.0](https://go.drugbank.com) XML (CC BY-NC 4.0) |
-| Beers Criteria | AGS 2023 Beers Criteria, manually curated |
-| Drug name normalization | [RxNorm API](https://lhncbc.nlm.nih.gov/RxNav/APIs/RxNormAPIs.html) (NLM) |
-| Local database | SQLite |
-| Language | Python 3.10+ |
+|---|---|
+| LLM and OCR | Gemma 4 (E4B or 26B MoE) via Ollama |
+| Backend | Python 3.10+, FastAPI, SQLite |
+| Frontend | React 18, Vite, Tailwind CSS |
+| Drug data | DrugBank 6.0 (CC BY-NC 4.0), AGS Beers Criteria 2023, RxNorm (NLM) |
 
----
+## Running locally
 
-## Usage
+Prerequisites: Python 3.10+, Node 18+, [Ollama](https://ollama.com) with the Gemma 4 model pulled, and a built `medora.db`.
 
-- **Upload a photo** of a medication bottle label, or
-- **Type drug names** separated by commas (e.g. `warfarin, ibuprofen, aspirin`), or
-- **Both** — upload a photo and add more drugs by text
+```bash
+# Backend (from repo root)
+pip install -r requirements.txt
+python app.py                       # serves http://127.0.0.1:8000
 
-The app extracts drug names, checks for interactions, screens against Beers Criteria, and generates a plain-language safety report.
+# Frontend (in another terminal)
+cd client
+npm install
+npm run dev                         # serves http://localhost:5173
+```
 
----
+The Vite dev server proxies `/api/*` to the FastAPI backend, so the client only needs the one URL.
 
-## Data Sources
+## Data sources
 
-- **DrugBank 6.0** — 1.4M+ drug-drug interactions, CC BY-NC 4.0. Knox et al., *Nucleic Acids Res.* 2024;52(D1):D1265-D1275.
-- **AGS Beers Criteria 2023** — Potentially inappropriate medications for older adults. *J Am Geriatr Soc.* 2023;71(7):2052-2081.
-- **RxNorm** — Drug name normalization. U.S. National Library of Medicine.
+- DrugBank 6.0 — Knox et al., *Nucleic Acids Res.* 2024;52(D1):D1265–D1275.
+- AGS 2023 Beers Criteria — *J Am Geriatr Soc.* 2023;71(7):2052–2081.
+- RxNorm — U.S. National Library of Medicine.
 
----
+## Disclaimer
+
+Medora is an educational tool and is not a substitute for professional medical advice. Always consult a licensed clinician before changing medications.
