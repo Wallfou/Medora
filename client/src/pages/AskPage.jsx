@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { FaArrowLeft, FaPaperPlane } from "react-icons/fa";
 import ReactMarkdown from "react-markdown";
 import { useMedora } from "../context/MedoraContext.jsx";
-import { apiJson } from "../lib/api.js";
+import { parseApiError } from "../lib/api.js";
 
 function buildOpener() {
   return "Ask anything about your medications.";
@@ -45,27 +45,78 @@ export default function AskPage() {
     const question = input.trim();
     if (!question || sending) return;
     setError(null);
-    const nextMessages = [...messages, { role: "user", content: question }];
-    setMessages(nextMessages);
+    const baseMessages = [...messages, { role: "user", content: question }];
+    setMessages(baseMessages);
     setInput("");
     setSending(true);
+
     try {
-      const history = nextMessages
+      const history = baseMessages
         .slice(0, -1)
         .filter((m) => m.role === "user" || m.role === "assistant");
-      const data = await apiJson("/api/ask", {
+
+      const res = await fetch("/api/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          question,
-          medications: meds,
-          history,
-        }),
+        body: JSON.stringify({ question, medications: meds, history }),
       });
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: data.response || "" },
-      ]);
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(parseApiError(data, res.statusText));
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let buffer = "";
+      let appended = false;
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const piece = decoder.decode(value, { stream: true });
+        if (!piece) continue;
+        buffer += piece;
+        if (!appended) {
+          appended = true;
+          setMessages((prev) => [
+            ...prev,
+            { role: "assistant", content: buffer },
+          ]);
+        } else {
+          setMessages((prev) => {
+            const next = prev.slice();
+            next[next.length - 1] = { role: "assistant", content: buffer };
+            return next;
+          });
+        }
+      }
+
+      const tail = decoder.decode();
+      if (tail) {
+        buffer += tail;
+        setMessages((prev) => {
+          const next = prev.slice();
+          if (!appended) {
+            return [...prev, { role: "assistant", content: buffer }];
+          }
+          next[next.length - 1] = { role: "assistant", content: buffer };
+          return next;
+        });
+        appended = true;
+      }
+
+      // empty stream: still surface something so the chat doesn't look frozen
+      if (!appended) {
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: "" },
+        ]);
+      }
+
+      // Detect server side error sentinel emitted after streaming started
+      const errMatch = buffer.match(/\[ERROR\]\s*(.+)$/);
+      if (errMatch) setError(errMatch[1].trim());
     } catch (e) {
       setError(e.message);
     } finally {
@@ -137,7 +188,7 @@ export default function AskPage() {
               </li>
             );
           })}
-          {sending && (
+          {sending && messages[messages.length - 1]?.role === "user" && (
             <li className="flex justify-start">
               <div className="inline-flex items-center gap-2 rounded-2xl rounded-bl-md bg-surface px-4 py-3 text-[1rem] text-muted ring-1 ring-divider">
                 <span className="h-3 w-3 animate-spin rounded-full border-[2px] border-primary/30 border-t-primary" />

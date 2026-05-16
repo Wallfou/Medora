@@ -6,6 +6,7 @@ from typing import List
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from . import service
@@ -223,9 +224,12 @@ def analyze(body: AnalyzeRequest):
     )
 
 
-@app.post("/api/ask", response_model=AskResponse)
+@app.post("/api/ask")
 def ask(body: AskRequest):
-    """Follow-up chat with medication context"""
+    """
+    Follow-up chat with medication context. Streams the response as
+    text chunks so the client can render tokens progressively.
+    """
     question = body.question.strip()
     if not question:
         raise HTTPException(status_code=400, detail="Question is required.")
@@ -237,12 +241,20 @@ def ask(body: AskRequest):
     ]
     history = [{"role": t.role, "content": t.content} for t in body.history]
 
-    try:
-        text = service.answer_question(question, meds, history)
-    except Exception as e:
-        raise HTTPException(
-            status_code=502,
-            detail=f"LLM error (is Ollama running with {service.TEXT_MODEL}?): {e}",
-        ) from e
+    def generate():
+        try:
+            for chunk in service.answer_question_stream(question, meds, history):
+                yield chunk
+        except Exception as e:
+            # have to emit a sentinel the client can detect since we cant change the HTTP status code
+            yield f"\n\n[ERROR] {e}"
 
-    return AskResponse(response=text)
+    return StreamingResponse(
+        generate(),
+        media_type="text/plain; charset=utf-8",
+        headers={
+            # Cancels any intermediate buffering so chunks reach in realtime 
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )

@@ -754,12 +754,7 @@ def _build_medication_reference(meds):
     )
 
 
-def answer_question(question, medications, history):
-    """follow up question chatbot, answer a patient's question with medication context
-
-    medications: list of name strings OR {name, dosage} dicts. Dose is woven
-    into both the inline list and the reference block.
-    """
+def _build_ask_messages(question, medications, history):
     meds = _coerce_meds(medications)
     meds_str = _format_meds_inline(meds) if meds else "none listed"
 
@@ -787,16 +782,50 @@ def answer_question(question, medications, history):
         if role in ("user", "assistant") and content:
             messages.append({"role": role, "content": content})
     messages.append({"role": "user", "content": question})
+    return messages
+
+
+_ASK_OPTIONS = {
+    "num_predict": 1400,
+    "repeat_penalty": 1.08,
+    "repeat_last_n": 64,
+    "num_ctx": 2048,
+}
+
+
+def answer_question_stream(question, medications, history):
+    """
+    Streaming follow-up chatbot 
+    
+    Yields response text chunks as they arrive from Ollama. 
+    Prefer this over answer_question for chat endpoints so the
+    client can render tokens progressively
+    """
+    messages = _build_ask_messages(question, medications, history)
+    stream = ollama.chat(
+        model=TEXT_MODEL,
+        messages=messages,
+        stream=True,
+        keep_alive="24h",
+        options=_ASK_OPTIONS,
+    )
+    for chunk in stream:
+        piece = chunk.get("message", {}).get("content", "")
+        if piece:
+            yield piece
+
+
+def answer_question(question, medications, history):
+    """
+    Non-streaming chat. 
+    Collects the streamed response into a single string."""
+    messages = _build_ask_messages(question, medications, history)
 
     response = ollama.chat(
         model=TEXT_MODEL,
         messages=messages,
-        options={
-            "num_predict": 1400,
-            "repeat_penalty": 1.08,
-            "repeat_last_n": 64,
-            "num_ctx": 4096,
-        },
+        keep_alive="24h",
+        options=_ASK_OPTIONS,
     )
     return response["message"]["content"]
 
