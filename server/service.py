@@ -14,9 +14,9 @@ import ollama
 from rapidfuzz import fuzz, process
 
 DB_FILE = os.environ.get("MEDORA_DB", "medora.db")
-TEXT_MODEL = os.environ.get("MEDORA_TEXT_MODEL", "medora-gemma4-text")
-VISION_MODEL = os.environ.get("MEDORA_VISION_MODEL", "gemma4:e2b")
-SUMMARY_MODEL = os.environ.get("MEDORA_SUMMARY_MODEL", "medora-gemma4-text")
+TEXT_MODEL = os.environ.get("MEDORA_TEXT_MODEL", "gemma4")
+VISION_MODEL = os.environ.get("MEDORA_VISION_MODEL", "gemma4")
+SUMMARY_MODEL = os.environ.get("MEDORA_SUMMARY_MODEL", "gemma4")
 SUMMARY_TIMEOUT_S = float(os.environ.get("MEDORA_SUMMARY_TIMEOUT", "30"))
 
 _logger = logging.getLogger(__name__)
@@ -769,7 +769,11 @@ def answer_question(question, medications, history):
         "Use short, simple sentences. Explain medical terms in plain language. "
         "Share standard patient education information freely. "
         "Defer diagnosis and dosage decisions to doctors. "
-        "Never repeat the same disclaimer twice in a row."
+        "Open with the direct answer; do not preamble. "
+        "Keep responses under 180 words unless the patient asks for more detail. "
+        "Use short prose paragraphs, not bulleted lists or section headers. "
+        "State each important point once. Do not restate the same advice in different words, "
+        "and never repeat the same disclaimer twice in a row."
     )
 
     reference = _build_medication_reference(meds)
@@ -787,7 +791,12 @@ def answer_question(question, medications, history):
     response = ollama.chat(
         model=TEXT_MODEL,
         messages=messages,
-        options={"num_predict": 1024},
+        options={
+            "num_predict": 1400,
+            "repeat_penalty": 1.08,
+            "repeat_last_n": 64,
+            "num_ctx": 4096,
+        },
     )
     return response["message"]["content"]
 
