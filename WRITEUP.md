@@ -330,6 +330,7 @@ End-to-end latency (final state):
 
 ## 13. Future Work
 
+- **Native iOS and Android apps.** Today Medora is a web app; a native rewrite using MLX (iOS) and llama.cpp's mobile bindings (Android) would let the model run directly on the phone instead of through a desktop Ollama install. This is the form factor that best matches the offline, on-device pitch — the user's caregiver puts the app on their phone and it works at the kitchen table without any other setup.
 - **Voice I/O.** A microphone input and TTS output would unlock the app for low-literacy users and those with vision difficulties. The chat infrastructure is already streaming-ready.
 - **Multilingual.** Gemma 4 supports many languages; the persona prompt is the only English-specific piece. Spanish would be the highest-impact next target.
 - **Validation layer.** A rule-based post-filter to catch known failure modes ("worth the risk" phrases, "low-dose [interacting drug] is okay" patterns, missing doctor-referral) running inline. An LLM-judge layer could run async over logs to grow the rule list.
