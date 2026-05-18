@@ -41,6 +41,30 @@ export default function AskPage() {
     }
   }, [messages, sending]);
 
+  // (for mobile: keyboard pushes header upwards)
+  // Track the visual viewport so the page height 
+  // matches the visible area and pin document scroll to 0.
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const root = document.documentElement;
+    const prevBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const update = () => {
+      root.style.setProperty("--app-vh", `${vv.height}px`);
+      window.scrollTo(0, 0);
+    };
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+      root.style.removeProperty("--app-vh");
+      document.body.style.overflow = prevBodyOverflow;
+    };
+  }, []);
+
   const send = async () => {
     const question = input.trim();
     if (!question || sending) return;
@@ -133,26 +157,29 @@ export default function AskPage() {
   };
 
   return (
-    <div className="flex min-h-screen w-full flex-1 flex-col overflow-hidden bg-bg">
-      <header className="flex shrink-0 items-center gap-3 border-b border-divider bg-bg px-4 py-3">
+    <div
+      className="flex w-full flex-1 flex-col overflow-hidden bg-bg"
+      style={{ height: "var(--app-vh, 100dvh)", maxHeight: "var(--app-vh, 100dvh)" }}
+    >
+      <header className="flex shrink-0 items-center gap-3 border-b border-divider bg-bg px-4 py-2 sm:py-3">
         <button
           type="button"
           onClick={() => navigate(-1)}
-          className="inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border-none bg-transparent text-text hover:bg-divider"
+          className="inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border-none bg-transparent text-text hover:bg-divider sm:h-10 sm:w-10"
           aria-label="Back"
         >
           <FaArrowLeft size={18} />
         </button>
-        <h1 className="m-0 text-[1.35rem] font-bold tracking-tight text-text">
+        <h1 className="m-0 text-xl font-bold tracking-tight text-text sm:text-[1.35rem]">
           Ask Medora
         </h1>
       </header>
 
       <div
         ref={scrollRef}
-        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-5 py-5"
+        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-3 sm:px-5 sm:py-5"
       >
-        <ul className="m-0 flex list-none flex-col gap-4 p-0">
+        <ul className="m-0 flex list-none flex-col gap-3 p-0 sm:gap-4">
           {messages.map((m, i) => {
             const isUser = m.role === "user";
             const text = (m.content || "").trim();
@@ -204,7 +231,7 @@ export default function AskPage() {
         )}
       </div>
 
-      <div className="shrink-0 border-t border-divider bg-bg px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]">
+      <div className="shrink-0 border-t border-divider bg-bg px-4 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] sm:pt-3">
         <div className="flex items-center gap-2">
           <input
             ref={inputRef}
@@ -213,14 +240,14 @@ export default function AskPage() {
             onKeyDown={onKeyDown}
             disabled={sending}
             placeholder="Type your question…"
-            className="h-14 min-w-0 flex-1 rounded-2xl bg-surface px-5 text-[1.1rem] text-text ring-1 ring-divider placeholder:text-muted-2 focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-60"
+            className="h-12 min-w-0 flex-1 rounded-2xl bg-surface px-4 text-base text-text ring-1 ring-divider placeholder:text-muted-2 focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-60 sm:h-14 sm:px-5 sm:text-[1.1rem]"
             autoComplete="off"
           />
           <button
             type="button"
             onClick={send}
             disabled={!input.trim() || sending}
-            className="flex h-14 w-14 shrink-0 cursor-pointer items-center justify-center rounded-2xl border-none bg-primary text-white disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex h-12 w-12 shrink-0 cursor-pointer items-center justify-center rounded-2xl border-none bg-primary text-white disabled:cursor-not-allowed disabled:opacity-40 sm:h-14 sm:w-14"
             aria-label="Send"
           >
             <FaPaperPlane size={18} />

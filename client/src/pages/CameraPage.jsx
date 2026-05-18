@@ -56,8 +56,8 @@ export default function CameraPage() {
   const openGallery = () => galleryRef.current?.click();
 
   return (
-    <div className="flex min-h-[min(100vh-2rem,780px)] max-h-[min(100dvh-2rem,900px)] flex-1 flex-col overflow-hidden bg-camera-bg">
-      <div className="flex shrink-0 items-center justify-between gap-2 px-4 pb-2 pt-3">
+    <div className="flex h-[100dvh] max-h-[100dvh] flex-1 flex-col overflow-hidden bg-camera-bg">
+      <div className="flex shrink-0 items-center justify-between gap-2 px-4 pb-1.5 pt-2 sm:pb-2 sm:pt-3">
         <Link
           to={backTo}
           className="p-1 text-xl leading-none text-slate-200 hover:text-white"
@@ -65,7 +65,7 @@ export default function CameraPage() {
         >
           ←
         </Link>
-        <p className="m-0 max-w-[320px] flex-1 rounded-full bg-black/45 px-6 py-3 text-center text-base font-medium leading-snug text-slate-50">
+        <p className="m-0 max-w-[320px] flex-1 rounded-full bg-black/45 px-6 py-2 text-center text-sm font-medium leading-snug text-slate-50 sm:py-3 sm:text-base">
           Your medication photos
         </p>
         <span className="w-7 shrink-0" aria-hidden />
@@ -95,7 +95,7 @@ export default function CameraPage() {
             type="button"
             onClick={openCamera}
             disabled={loading}
-            className="flex h-full min-h-[220px] w-full flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-slate-700 bg-transparent text-slate-400 transition-colors hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex h-full min-h-[150px] w-full flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-700 bg-transparent text-slate-400 transition-colors hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-[220px] sm:gap-3"
           >
             <svg viewBox="0 0 64 64" width="48" height="48" fill="none" aria-hidden>
               <path
@@ -160,7 +160,7 @@ export default function CameraPage() {
         </div>
       )}
 
-      <div className="mt-auto flex shrink-0 flex-col items-stretch gap-3 rounded-t-[20px] bg-white px-4 pb-7 pt-5 shadow-[0_-8px_30px_rgba(0,0,0,0.12)] sm:px-6">
+      <div className="mt-auto flex shrink-0 flex-col items-stretch gap-2 rounded-t-[20px] bg-white px-4 pb-[max(0.875rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-8px_30px_rgba(0,0,0,0.12)] sm:gap-3 sm:px-6 sm:pb-7 sm:pt-5">
         <button
           type="button"
           className="inline-flex w-full cursor-pointer items-center justify-center gap-1.5 border-none bg-transparent py-1 text-[0.9rem] font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-50"
@@ -181,7 +181,7 @@ export default function CameraPage() {
 
         <button
           type="button"
-          className="inline-flex w-full max-w-full items-center justify-center gap-2 rounded-full bg-primary px-5 py-4 text-base font-semibold text-white shadow-[0_6px_20px_rgba(45,122,94,0.35)] transition-transform duration-100 hover:bg-primary-dark active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-[0.55]"
+          className="inline-flex w-full max-w-full items-center justify-center gap-2 rounded-full bg-primary px-5 py-3 text-base font-semibold text-white shadow-[0_6px_20px_rgba(45,122,94,0.35)] transition-transform duration-100 hover:bg-primary-dark active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-[0.55] sm:py-4"
           disabled={loading || photos.length === 0}
           onClick={goConfirm}
         >
